@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { Loader2, Radio, Search, Sparkles, Headphones } from 'lucide-react';
+import React, { useEffect, useState, useRef } from 'react';
+import { Loader2, Radio, Search, Sparkles, Headphones, X } from 'lucide-react';
 
 const STAGE_LABELS = {
   queued:                   { text: 'Initialising…',                icon: Loader2 },
@@ -9,15 +9,28 @@ const STAGE_LABELS = {
   building_curriculum:      { text: 'Building your curriculum…',    icon: Sparkles },
   writing_narration:        { text: 'Writing narration…',           icon: Sparkles },
   loading_audio:            { text: 'Loading audio…',               icon: Loader2 },
-  stitching:                { text: 'Assembling your Poddy…',   icon: Sparkles },
+  stitching:                { text: 'Assembling your Poddy…',       icon: Sparkles },
 };
 
 const STAGES_ORDER = ['queued', 'discovering_sources', 'downloading_transcribing', 'extracting_clips', 'building_curriculum', 'writing_narration', 'loading_audio', 'stitching'];
 
-export default function CuratorLoadingState({ topic, status, sourceNames }) {
+const ETA_RANGES = {
+  quick:    '3–6 minutes',
+  standard: '5–10 minutes',
+  deep:     '10–20 minutes',
+};
+
+export default function CuratorLoadingState({ topic, status, sourceNames, onCancel, depth }) {
   const [dots, setDots] = useState('');
+  const startRef = useRef(Date.now());
+  const [elapsed, setElapsed] = useState(0);
+
   useEffect(() => {
-    const iv = setInterval(() => setDots(d => d.length < 3 ? d + '.' : ''), 500);
+    startRef.current = Date.now();
+    const iv = setInterval(() => {
+      setDots(d => d.length < 3 ? d + '.' : '');
+      setElapsed(Math.floor((Date.now() - startRef.current) / 1000));
+    }, 500);
     return () => clearInterval(iv);
   }, []);
 
@@ -25,6 +38,9 @@ export default function CuratorLoadingState({ topic, status, sourceNames }) {
   const stageInfo  = STAGE_LABELS[status] || STAGE_LABELS.queued;
   const StageIcon  = stageInfo.icon;
   const pct        = stageIdx < 0 ? 0 : Math.round(((stageIdx + 1) / STAGES_ORDER.length) * 100);
+  const elapsedMin = Math.floor(elapsed / 60);
+  const elapsedSec = elapsed % 60;
+  const etaText    = ETA_RANGES[depth] || ETA_RANGES.standard;
 
   return (
     <div style={{ width: '100%', maxWidth: '560px', textAlign: 'center', animation: 'fadeSlideUp 0.4s ease' }}>
@@ -45,7 +61,6 @@ export default function CuratorLoadingState({ topic, status, sourceNames }) {
         }}>
           <StageIcon size={30} color="var(--amber)" style={{ animation: stageInfo.icon === Loader2 ? 'spin-slow 1.2s linear infinite' : undefined }} />
         </div>
-        {/* Outer pulse ring */}
         <div style={{
           position: 'absolute', inset: -8, borderRadius: '50%',
           border: '2px solid var(--amber)',
@@ -58,11 +73,16 @@ export default function CuratorLoadingState({ topic, status, sourceNames }) {
         Curating <span className="text-gradient">"{topic}"</span>
       </h2>
 
-      <p style={{ color: 'var(--text-secondary)', fontSize: '1rem', marginBottom: sourceNames.length > 0 ? '1rem' : '2.5rem', minHeight: '1.5rem' }}>
+      <p style={{ color: 'var(--text-secondary)', fontSize: '1rem', marginBottom: '0.5rem', minHeight: '1.5rem' }}>
         {stageInfo.text}{dots}
       </p>
 
-      {/* Source badges — shown FIRST as soon as discovered */}
+      {/* Elapsed time + ETA */}
+      <p style={{ color: 'var(--text-tertiary)', fontSize: '0.78rem', marginBottom: sourceNames.length > 0 ? '1rem' : '2rem' }}>
+        {elapsedMin > 0 ? `${elapsedMin}m ${elapsedSec}s` : `${elapsedSec}s`} elapsed · Usually takes {etaText}
+      </p>
+
+      {/* Source badges */}
       {sourceNames.length > 0 && (
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', justifyContent: 'center', marginBottom: '2rem' }}>
           <span style={{ color: 'var(--text-tertiary)', fontSize: '0.75rem', width: '100%', marginBottom: '0.15rem' }}>Sources selected:</span>
@@ -73,6 +93,7 @@ export default function CuratorLoadingState({ topic, status, sourceNames }) {
           ))}
         </div>
       )}
+
       {/* Progress bar */}
       <div style={{ background: 'var(--bg-tertiary)', borderRadius: 8, height: 6, marginBottom: '0.6rem', overflow: 'hidden' }}>
         <div style={{
@@ -89,11 +110,10 @@ export default function CuratorLoadingState({ topic, status, sourceNames }) {
       </div>
 
       {/* Stage steps */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', textAlign: 'left' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', textAlign: 'left', marginBottom: '2rem' }}>
         {STAGES_ORDER.map((s, i) => {
           const done    = i < stageIdx;
           const active  = i === stageIdx;
-          const pending = i > stageIdx;
           return (
             <div key={s} style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.55rem 0.85rem', borderRadius: '10px', background: active ? 'var(--amber-glow)' : 'transparent', border: `1px solid ${active ? 'var(--amber-border)' : 'transparent'}`, transition: 'all 0.3s' }}>
               <div style={{ width: 7, height: 7, borderRadius: '50%', flexShrink: 0, background: done ? 'var(--amber)' : active ? 'var(--coral)' : 'var(--text-muted)', boxShadow: active ? '0 0 8px var(--coral)' : 'none', transition: 'all 0.3s' }} />
@@ -104,6 +124,24 @@ export default function CuratorLoadingState({ topic, status, sourceNames }) {
           );
         })}
       </div>
+
+      {/* Cancel button */}
+      {onCancel && (
+        <button
+          onClick={onCancel}
+          style={{
+            display: 'inline-flex', alignItems: 'center', gap: '0.4rem',
+            padding: '0.55rem 1.25rem', borderRadius: '50px',
+            background: 'transparent', border: '1px solid var(--border-subtle)',
+            color: 'var(--text-tertiary)', fontSize: '0.82rem', fontWeight: 500,
+            cursor: 'pointer', transition: 'all 0.2s', fontFamily: 'var(--font-body)',
+          }}
+          onMouseOver={e => { e.currentTarget.style.borderColor = 'var(--coral)'; e.currentTarget.style.color = 'var(--coral)'; }}
+          onMouseOut={e => { e.currentTarget.style.borderColor = 'var(--border-subtle)'; e.currentTarget.style.color = 'var(--text-tertiary)'; }}
+        >
+          <X size={13} /> Cancel
+        </button>
+      )}
     </div>
   );
 }

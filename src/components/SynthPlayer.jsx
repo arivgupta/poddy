@@ -90,7 +90,18 @@ export default function SynthPlayer({ topic, jobId, audioUrl, chapters, sourcesU
     return () => { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp); };
   }, [isDragging, seekToPosition]);
 
-  const handleDownload = () => window.open(`${BACKEND}/download/${jobId}`, '_blank');
+  const handleDownload = () => {
+    if (audioUrl && audioUrl.startsWith('blob:')) {
+      const a = document.createElement('a');
+      a.href = audioUrl;
+      a.download = `Poddy - ${topic.replace(/[/\\]/g, '-').slice(0, 50)}.mp3`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    } else {
+      window.open(`${BACKEND}/download/${jobId}`, '_blank');
+    }
+  };
 
   const progress = totalMs > 0 ? (currentMs / totalMs) * 100 : 0;
 
