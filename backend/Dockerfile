@@ -18,7 +18,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 # Ensure /tmp jobs directory exists and is writable
-RUN mkdir -p /tmp/synthcast_jobs && chmod 777 /tmp/synthcast_jobs
+RUN mkdir -p /tmp/poddy_jobs && chmod 777 /tmp/poddy_jobs
 
 # ── Runtime ──────────────────────────────────────────────────────────────────
 ENV PYTHONUNBUFFERED=1
