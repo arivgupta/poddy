@@ -1,5 +1,6 @@
 from typing import List, Dict, Optional, Any, Tuple
 import os
+import subprocess
 import asyncio
 from pydub import AudioSegment
 
@@ -27,14 +28,31 @@ def generate_tts(text: str, output_path: str) -> str:
     return output_path
 
 
+def _ffmpeg_extract_clip(source_path: str, start_sec: float, end_sec: float, out_path: str) -> bool:
+    """Use ffmpeg to extract a clip without loading the full file into memory."""
+    duration = end_sec - start_sec
+    if duration <= 0:
+        return False
+    try:
+        subprocess.run(
+            ["ffmpeg", "-y", "-ss", str(start_sec), "-i", source_path,
+             "-t", str(duration), "-ac", "1", "-ab", "128k", out_path],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True,
+        )
+        return os.path.exists(out_path)
+    except subprocess.CalledProcessError as e:
+        print(f"  ffmpeg clip extraction failed: {e}")
+        return False
+
+
 def stitch_multi_source(
     plan: List[dict],
     tts_dir: str,
 ) -> Tuple[str, List[dict]]:
     """
     Assembles the final podcast from an ordered plan list.
-    Loads each source audio file on-demand and releases it when no more clips
-    need it, keeping peak memory to ~1 source file at a time.
+    Uses ffmpeg to extract each clip directly from the source file,
+    so the full source audio is never loaded into memory.
 
     plan items are either:
       { type: "transition", text: "...", chapter_title: "..." }
@@ -46,13 +64,7 @@ def stitch_multi_source(
     final_audio = AudioSegment.empty()
     chapters = []
     current_ms = 0
-    _audio_cache: Dict[str, Any] = {}
-
-    # Pre-compute last usage index for each audio_path so we can free memory
-    last_usage: Dict[str, int] = {}
-    for idx, seg in enumerate(plan):
-        if seg.get("type") == "clip" and seg.get("audio_path"):
-            last_usage[seg["audio_path"]] = idx
+    clip_counter = 0
 
     for idx, segment in enumerate(plan):
         seg_type = segment.get("type")
@@ -87,26 +99,22 @@ def stitch_multi_source(
                 print(f"  Warning: audio file not found: {audio_path}, skipping clip")
                 continue
 
-            # Load on first use
-            if audio_path not in _audio_cache:
-                print(f"  Loading audio: {audio_path}")
-                _audio_cache[audio_path] = AudioSegment.from_mp3(audio_path)
-
-            source_audio = _audio_cache[audio_path]
             start_sec = segment.get("start_time", 0)
             end_sec   = segment.get("end_time", 0)
 
-            start_sample = int(start_sec * 1000)
-            end_sample   = int(end_sec   * 1000)
-
-            start_sample = min(start_sample, len(source_audio))
-            end_sample   = min(end_sample,   len(source_audio))
-
-            if end_sample <= start_sample:
+            if end_sec <= start_sec:
                 print(f"  Warning: invalid clip range {start_sec}–{end_sec}s, skipping")
                 continue
 
-            clip = source_audio[start_sample:end_sample]
+            clip_path = os.path.join(tts_dir, f"clip_{clip_counter}.mp3")
+            clip_counter += 1
+
+            print(f"  Extracting clip {start_sec:.1f}–{end_sec:.1f}s from {os.path.basename(audio_path)}")
+            if not _ffmpeg_extract_clip(audio_path, start_sec, end_sec, clip_path):
+                print(f"  Warning: failed to extract clip, skipping")
+                continue
+
+            clip = AudioSegment.from_mp3(clip_path)
             clip = clip.fade_in(CROSSFADE_MS).fade_out(CROSSFADE_MS)
 
             start_ms = current_ms
@@ -123,10 +131,9 @@ def stitch_multi_source(
                 "apple_podcasts_url": segment.get("apple_podcasts_url", ""),
             })
 
-            # Free source audio once all its clips are done
-            if last_usage.get(audio_path) == idx:
-                del _audio_cache[audio_path]
-                print(f"  Released audio: {audio_path}")
+            # Clean up extracted clip file to save disk
+            if os.path.exists(clip_path):
+                os.remove(clip_path)
 
     output_path = os.path.join(tts_dir, "final_poddy.mp3")
     print(f"Exporting final audio ({current_ms/1000:.1f}s) → {output_path}")

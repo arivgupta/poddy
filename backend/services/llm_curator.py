@@ -41,11 +41,18 @@ Number of sources needed: {n_sources}
 
 Your job is to identify the single best podcast episodes that cover this topic with maximum credibility, depth, and unique insight. Think of the episodes that would come up if you asked the world's best experts "what is the definitive audio resource on {topic}?"
 
-Rules:
+DIVERSITY RULES (critical):
+- Each source MUST be from a DIFFERENT podcast show — never repeat the same show
+- Actively diversify across different types of podcasters: scientists, practitioners, journalists, entrepreneurs, patients/lived-experience, etc.
+- Do NOT default to the same 3-5 "safe" shows every time. Dig deeper — there are thousands of great podcasts
+- If the topic is scientific, include at least one non-academic voice (practitioner, journalist, author) for accessibility
+- If the topic is practical/lifestyle, include at least one research-focused voice for credibility
+
+QUALITY RULES:
 - Prefer episodes that go deep on the science, mechanism, or practical protocol — NOT generic overviews
-- Prefer well-known credible shows (Huberman Lab, The Drive, Lex Fridman, Tim Ferriss, Diary of a CEO, etc.)
-- Each source should offer a UNIQUE angle — no redundancy (e.g., if one episode covers the mechanism, pick another that covers the protocol)
+- Each source should offer a UNIQUE angle — no redundancy (e.g., if one covers mechanism, pick another for protocol, another for lived experience)
 - Order them from most fundamental to most advanced/specific
+- Use the EXACT podcast name as it appears on Apple Podcasts / Spotify so we can find it
 
 Return ONLY valid JSON:
 {{
@@ -59,7 +66,7 @@ Return ONLY valid JSON:
 }}"""
 
     response = _client().chat.completions.create(
-        model="gpt-4o",
+        model="gpt-4o-mini",
         messages=[
             {"role": "system", "content": "You are an expert podcast curator. Output only valid JSON."},
             {"role": "user", "content": prompt}
@@ -69,7 +76,7 @@ Return ONLY valid JSON:
     )
     data = json.loads(response.choices[0].message.content)
     sources = data.get("sources", [])
-    print(f"GPT-4o recommended {len(sources)} sources: {[s['podcast_name'] for s in sources]}")
+    print(f"GPT-4o-mini recommended {len(sources)} sources: {[s['podcast_name'] for s in sources]}")
     return sources
 
 
@@ -182,7 +189,7 @@ Return ONLY valid JSON:
 }}"""
 
     response = _client().chat.completions.create(
-        model="gpt-4o",
+        model="gpt-4o-mini",
         messages=[
             {"role": "system", "content": "You are a curriculum designer. Output only valid JSON."},
             {"role": "user", "content": prompt}
@@ -241,7 +248,7 @@ Return ONLY valid JSON:
 }}"""
 
     response = _client().chat.completions.create(
-        model="gpt-4o",
+        model="gpt-4o-mini",
         messages=[
             {"role": "system", "content": "You are an eloquent podcast narrator. Output only valid JSON."},
             {"role": "user", "content": prompt}

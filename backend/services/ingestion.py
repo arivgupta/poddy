@@ -100,7 +100,7 @@ def get_best_episode(feed_url: str, topic_hint: str = "", episode_title_hint: st
 
 
 def _llm_pick_episode(episodes: list, topic: str, episode_hint: str) -> Optional[dict]:
-    """Ask GPT-4o to pick the single best episode from a list of titles."""
+    """Ask GPT-4o-mini to pick the single best episode from a list of titles."""
     from openai import OpenAI
     client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
 
@@ -108,7 +108,7 @@ def _llm_pick_episode(episodes: list, topic: str, episode_hint: str) -> Optional
     titles_block = "\n".join(titles)
 
     response = client.chat.completions.create(
-        model="gpt-4o",
+        model="gpt-4o-mini",
         messages=[
             {"role": "system", "content": "You pick podcast episodes. Return only valid JSON."},
             {"role": "user", "content": f"""Pick the ONE episode most relevant to the topic below.
@@ -167,9 +167,9 @@ def download_podcast_episode(mp3_url: str, output_path: str) -> str:
 # 4. TRIM  (keep first N minutes for Whisper's 25 MB limit)
 # ─────────────────────────────────────────────────────────────────────────────
 
-def trim_audio(input_path: str, max_minutes: int = 25) -> str:
+def trim_audio(input_path: str, max_minutes: int = 45) -> str:
     """Trims a podcast MP3 to max_minutes and re-encodes to 64kbps mono.
-    Low bitrate keeps files under Whisper's 25MB limit and reduces memory during stitching.
+    At 64kbps mono, 45 min ≈ 21MB — well under Whisper's 25MB limit.
     """
     import subprocess
     output_path = input_path.replace(".mp3", "_trim.mp3")
@@ -211,22 +211,21 @@ def transcribe_audio(audio_path: str) -> str:
         lines.append(f"{round(seg.start, 2)}s - {round(seg.end, 2)}s: {seg.text.strip()}")
     full_text = "\n".join(lines)
     print(f"  Transcript ready: {len(full_text)} chars")
-    # Cap at 8000 chars for LLM context efficiency
-    return full_text[:8000]
+    return full_text
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 6. PARALLEL MULTI-SOURCE PIPELINE
 # ─────────────────────────────────────────────────────────────────────────────
 
-def process_source(source: dict, job_dir: str) -> Optional[dict]:
+def process_source(source: dict, job_dir: str, user_topic: str = "") -> Optional[dict]:
     """
     Full pipeline for a single source: find podcast → find episode → download → trim → transcribe.
     Returns the source dict enriched with: transcript, resolved_episode_title, audio_path, apple_podcasts_url
     """
     podcast_name = source.get("podcast_name", "")
     episode_hint = source.get("episode_title_hint", "")
-    topic_hint   = source.get("unique_angle", podcast_name)
+    topic_hint   = user_topic or source.get("unique_angle", podcast_name)
 
     print(f"\n[{podcast_name}] Searching iTunes...")
     try:
@@ -245,7 +244,7 @@ def process_source(source: dict, job_dir: str) -> Optional[dict]:
         trim_path = raw_path.replace(".mp3", "_trim.mp3")  # Huberman_Lab_raw_trim.mp3
 
         download_podcast_episode(episode["mp3_url"], raw_path)
-        trim_audio(raw_path, max_minutes=25)
+        trim_audio(raw_path, max_minutes=45)
         # Free disk: raw file is no longer needed after trimming
         if os.path.exists(raw_path):
             os.remove(raw_path)
@@ -263,12 +262,12 @@ def process_source(source: dict, job_dir: str) -> Optional[dict]:
         return None
 
 
-def process_sources_parallel(sources: List[dict], job_dir: str) -> List[dict]:
+def process_sources_parallel(sources: List[dict], job_dir: str, user_topic: str = "") -> List[dict]:
     """Process multiple podcast sources in parallel (IO-bound, so threads are ideal)."""
     results = []
     max_workers = min(len(sources), 2)  # cap at 2 to limit memory on Railway
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        futures = {executor.submit(process_source, s, job_dir): s for s in sources}
+        futures = {executor.submit(process_source, s, job_dir, user_topic): s for s in sources}
         for future in as_completed(futures):
             result = future.result()
             if result:

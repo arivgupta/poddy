@@ -1,5 +1,6 @@
 from typing import List, Dict, Optional, Any, Tuple
 import os
+import subprocess
 
 # Ensure pydub can find ffmpeg — works on both macOS (Homebrew) and Linux (Docker)
 os.environ["PATH"] = "/opt/homebrew/bin:/usr/bin:/usr/local/bin:" + os.environ.get("PATH", "")
@@ -7,7 +8,6 @@ os.environ["PATH"] = "/opt/homebrew/bin:/usr/bin:/usr/local/bin:" + os.environ.g
 import json
 import uuid
 import threading
-from pydub import AudioSegment
 
 from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.responses import FileResponse, JSONResponse
@@ -72,6 +72,19 @@ class SynthesizeRequest(BaseModel):
 # Background pipeline
 # ─────────────────────────────────────────────────────────────────────────────
 
+def _get_duration_ms(path: str) -> int:
+    """Get audio duration in ms via ffprobe (avoids loading the file into memory)."""
+    try:
+        result = subprocess.run(
+            ["ffprobe", "-v", "error", "-show_entries", "format=duration",
+             "-of", "default=noprint_wrappers=1:nokey=1", path],
+            capture_output=True, text=True, check=True,
+        )
+        return int(float(result.stdout.strip()) * 1000)
+    except Exception:
+        return 0
+
+
 def run_pipeline(job_id: str, topic: str, depth: str):
     job_dir = os.path.join(JOBS_DIR, job_id)
     os.makedirs(job_dir, exist_ok=True)
@@ -91,7 +104,7 @@ def run_pipeline(job_id: str, topic: str, depth: str):
         # ── Stage 2: Parallel download + transcription ─────────────────────────
         update("downloading_transcribing", sources_found=len(sources),
                source_names=[s["podcast_name"] for s in sources])
-        enriched_sources = process_sources_parallel(sources, job_dir)
+        enriched_sources = process_sources_parallel(sources, job_dir, user_topic=topic)
 
         if not enriched_sources:
             raise RuntimeError("Could not download or transcribe any podcast sources.")
@@ -123,7 +136,7 @@ def run_pipeline(job_id: str, topic: str, depth: str):
         output_path, chapters = stitch_multi_source(plan, job_dir)
 
         # ── Done ───────────────────────────────────────────────────────────────
-        duration_ms = int(AudioSegment.from_mp3(output_path).duration_seconds * 1000)
+        duration_ms = _get_duration_ms(output_path)
         sources_used = list({s["podcast_name"] for s in enriched_sources})
 
         update(
