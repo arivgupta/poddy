@@ -127,14 +127,16 @@ def download_podcast_episode(mp3_url: str, output_path: str) -> str:
 # ─────────────────────────────────────────────────────────────────────────────
 
 def trim_audio(input_path: str, max_minutes: int = 25) -> str:
-    """Trims a podcast MP3 to max_minutes using ffmpeg stream copy (near-zero memory)."""
+    """Trims a podcast MP3 to max_minutes and re-encodes to 64kbps mono.
+    Low bitrate keeps files under Whisper's 25MB limit and reduces memory during stitching.
+    """
     import subprocess
     output_path = input_path.replace(".mp3", "_trim.mp3")
     if os.path.exists(output_path):
         os.remove(output_path)
     subprocess.run(
         ["ffmpeg", "-y", "-i", input_path, "-t", str(max_minutes * 60),
-         "-acodec", "copy", output_path],
+         "-ac", "1", "-ab", "64k", output_path],
         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True,
     )
     print(f"  Trimmed to {max_minutes}min → {output_path}")
