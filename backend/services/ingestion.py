@@ -37,8 +37,8 @@ def search_podcast(query: str, limit: int = 5) -> List[dict]:
 
 def get_best_episode(feed_url: str, topic_hint: str = "", episode_title_hint: str = "") -> dict:
     """
-    Parses an RSS feed and returns the episode most relevant to the hints.
-    Falls back to most recent episode if no match found.
+    Parses an RSS feed and uses GPT-4o to pick the most relevant episode.
+    Falls back to keyword matching if the LLM call fails.
     Returns: { title, mp3_url, apple_podcasts_url }
     """
     try:
@@ -51,7 +51,6 @@ def get_best_episode(feed_url: str, topic_hint: str = "", episode_title_hint: st
     root = ET.fromstring(raw)
     episodes = []
 
-    # Get Apple Podcasts show URL from channel
     channel_link = ""
     for link_el in root.iter("link"):
         if link_el.text and "apple" in link_el.text:
@@ -76,7 +75,15 @@ def get_best_episode(feed_url: str, topic_hint: str = "", episode_title_hint: st
     if not episodes:
         raise ValueError(f"No audio episodes found in feed: {feed_url}")
 
-    # Score by both topic hint and episode title hint
+    # Use GPT-4o to pick the best episode from the catalog
+    try:
+        best = _llm_pick_episode(episodes[:50], topic_hint, episode_title_hint)
+        if best is not None:
+            return best
+    except Exception as e:
+        print(f"  LLM episode selection failed, falling back to keyword match: {e}")
+
+    # Fallback: keyword scoring
     combined_hint = f"{topic_hint} {episode_title_hint}".lower()
     keywords = set(re.sub(r"[^a-zA-Z0-9 ]", "", combined_hint).split())
 
@@ -90,6 +97,40 @@ def get_best_episode(feed_url: str, topic_hint: str = "", episode_title_hint: st
             return best
 
     return episodes[0]
+
+
+def _llm_pick_episode(episodes: list, topic: str, episode_hint: str) -> Optional[dict]:
+    """Ask GPT-4o to pick the single best episode from a list of titles."""
+    from openai import OpenAI
+    client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
+
+    titles = [f"{i}: {ep['title']}" for i, ep in enumerate(episodes)]
+    titles_block = "\n".join(titles)
+
+    response = client.chat.completions.create(
+        model="gpt-4o",
+        messages=[
+            {"role": "system", "content": "You pick podcast episodes. Return only valid JSON."},
+            {"role": "user", "content": f"""Pick the ONE episode most relevant to the topic below.
+
+Topic: {topic}
+Episode hint: {episode_hint}
+
+EPISODES:
+{titles_block}
+
+Return ONLY: {{"index": 3, "reason": "one sentence"}}
+If NONE are relevant, return: {{"index": -1, "reason": "why"}}"""}
+        ],
+        response_format={"type": "json_object"},
+        temperature=0.1,
+    )
+    data = json.loads(response.choices[0].message.content)
+    idx = data.get("index", -1)
+    if 0 <= idx < len(episodes):
+        print(f"  LLM picked episode [{idx}]: {episodes[idx]['title']} — {data.get('reason', '')}")
+        return episodes[idx]
+    return None
 
 
 # ─────────────────────────────────────────────────────────────────────────────
