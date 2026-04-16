@@ -29,11 +29,12 @@ def generate_tts(text: str, output_path: str) -> str:
 
 def stitch_multi_source(
     plan: List[dict],
-    audio_cache: Dict[str, Any],  # { audio_path: AudioSegment } loaded by main
     tts_dir: str,
 ) -> Tuple[str, List[dict]]:
     """
     Assembles the final podcast from an ordered plan list.
+    Loads each source audio file on-demand and releases it when no more clips
+    need it, keeping peak memory to ~1 source file at a time.
 
     plan items are either:
       { type: "transition", text: "...", chapter_title: "..." }
@@ -45,6 +46,13 @@ def stitch_multi_source(
     final_audio = AudioSegment.empty()
     chapters = []
     current_ms = 0
+    _audio_cache: Dict[str, Any] = {}
+
+    # Pre-compute last usage index for each audio_path so we can free memory
+    last_usage: Dict[str, int] = {}
+    for idx, seg in enumerate(plan):
+        if seg.get("type") == "clip" and seg.get("audio_path"):
+            last_usage[seg["audio_path"]] = idx
 
     for idx, segment in enumerate(plan):
         seg_type = segment.get("type")
@@ -75,18 +83,22 @@ def stitch_multi_source(
 
         elif seg_type == "clip":
             audio_path = segment.get("audio_path", "")
-            if audio_path not in audio_cache:
-                print(f"  Warning: audio not cached for {audio_path}, skipping clip")
+            if not audio_path or not os.path.exists(audio_path):
+                print(f"  Warning: audio file not found: {audio_path}, skipping clip")
                 continue
 
-            source_audio = audio_cache[audio_path]
+            # Load on first use
+            if audio_path not in _audio_cache:
+                print(f"  Loading audio: {audio_path}")
+                _audio_cache[audio_path] = AudioSegment.from_mp3(audio_path)
+
+            source_audio = _audio_cache[audio_path]
             start_sec = segment.get("start_time", 0)
             end_sec   = segment.get("end_time", 0)
 
             start_sample = int(start_sec * 1000)
             end_sample   = int(end_sec   * 1000)
 
-            # Clamp to actual audio length
             start_sample = min(start_sample, len(source_audio))
             end_sample   = min(end_sample,   len(source_audio))
 
@@ -110,6 +122,11 @@ def stitch_multi_source(
                 "source_episode": segment.get("episode_title", ""),
                 "apple_podcasts_url": segment.get("apple_podcasts_url", ""),
             })
+
+            # Free source audio once all its clips are done
+            if last_usage.get(audio_path) == idx:
+                del _audio_cache[audio_path]
+                print(f"  Released audio: {audio_path}")
 
     output_path = os.path.join(tts_dir, "final_poddy.mp3")
     print(f"Exporting final audio ({current_ms/1000:.1f}s) → {output_path}")

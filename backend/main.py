@@ -118,19 +118,9 @@ def run_pipeline(job_id: str, topic: str, depth: str):
         update("writing_narration")
         plan = write_transitions_batch(topic, ordered_clips)
 
-        # ── Stage 6: Load audio files into memory cache ────────────────────────
-        update("loading_audio")
-        audio_paths = set(
-            seg["audio_path"] for seg in plan if seg.get("type") == "clip"
-        )
-        audio_cache = {}
-        for path in audio_paths:
-            if os.path.exists(path):
-                audio_cache[path] = AudioSegment.from_mp3(path)
-
-        # ── Stage 7: Stitch ────────────────────────────────────────────────────
+        # ── Stage 6: Stitch (loads audio on-demand per source) ─────────────────
         update("stitching")
-        output_path, chapters = stitch_multi_source(plan, audio_cache, job_dir)
+        output_path, chapters = stitch_multi_source(plan, job_dir)
 
         # ── Done ───────────────────────────────────────────────────────────────
         duration_ms = int(AudioSegment.from_mp3(output_path).duration_seconds * 1000)

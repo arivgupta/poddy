@@ -6,7 +6,6 @@ import urllib.request
 import urllib.parse
 import xml.etree.ElementTree as ET
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from pydub import AudioSegment
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -128,11 +127,16 @@ def download_podcast_episode(mp3_url: str, output_path: str) -> str:
 # ─────────────────────────────────────────────────────────────────────────────
 
 def trim_audio(input_path: str, max_minutes: int = 25) -> str:
-    """Trims a podcast MP3 to max_minutes for efficient Whisper transcription."""
+    """Trims a podcast MP3 to max_minutes using ffmpeg stream copy (near-zero memory)."""
+    import subprocess
     output_path = input_path.replace(".mp3", "_trim.mp3")
-    audio = AudioSegment.from_mp3(input_path)
-    trimmed = audio[: max_minutes * 60 * 1000]
-    trimmed.export(output_path, format="mp3", bitrate="64k")
+    if os.path.exists(output_path):
+        os.remove(output_path)
+    subprocess.run(
+        ["ffmpeg", "-y", "-i", input_path, "-t", str(max_minutes * 60),
+         "-acodec", "copy", output_path],
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True,
+    )
     print(f"  Trimmed to {max_minutes}min → {output_path}")
     return output_path
 
@@ -198,7 +202,10 @@ def process_source(source: dict, job_dir: str) -> Optional[dict]:
         trim_path = raw_path.replace(".mp3", "_trim.mp3")  # Huberman_Lab_raw_trim.mp3
 
         download_podcast_episode(episode["mp3_url"], raw_path)
-        trim_audio(raw_path, max_minutes=25)  # saves to trim_path automatically
+        trim_audio(raw_path, max_minutes=25)
+        # Free disk: raw file is no longer needed after trimming
+        if os.path.exists(raw_path):
+            os.remove(raw_path)
         transcript = transcribe_audio(trim_path)
 
         return {
@@ -216,7 +223,7 @@ def process_source(source: dict, job_dir: str) -> Optional[dict]:
 def process_sources_parallel(sources: List[dict], job_dir: str) -> List[dict]:
     """Process multiple podcast sources in parallel (IO-bound, so threads are ideal)."""
     results = []
-    max_workers = min(len(sources), 3)  # cap at 3 parallel downloads
+    max_workers = min(len(sources), 2)  # cap at 2 to limit memory on Railway
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         futures = {executor.submit(process_source, s, job_dir): s for s in sources}
         for future in as_completed(futures):
