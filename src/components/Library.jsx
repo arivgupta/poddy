@@ -17,19 +17,19 @@ function formatDate(ts) {
 export default function Library({ entries, onPlay, onDelete, onNewCast }) {
   if (entries.length === 0) {
     return (
-      <div style={{ textAlign: 'center', padding: '5rem 2rem', animation: 'fadeSlideUp var(--dur-slow) var(--ease-out)' }}>
-        <div style={{ fontSize: '4rem', marginBottom: '1.5rem', opacity: 0.2 }}>🎙</div>
+      <div className="entrance" style={{ textAlign: 'center', padding: '5rem 2rem' }}>
+        <div style={{ fontSize: '3.5rem', marginBottom: '1.5rem', opacity: 0.3 }}>🎙</div>
         <h2 className="display" style={{ fontSize: '2rem', marginBottom: '0.75rem', color: 'var(--text-secondary)' }}>
           Your library is empty
         </h2>
-        <p style={{ color: 'var(--text-tertiary)', marginBottom: '2rem' }}>
+        <p style={{ color: 'var(--text-tertiary)', marginBottom: '2rem', fontSize: '0.95rem' }}>
           Generate your first Poddy to see it here.
         </p>
         <button
           onClick={onNewCast}
-          style={{ padding: '0.75rem 1.75rem', borderRadius: '50px', background: 'var(--accent)', color: 'white', fontWeight: 600, fontSize: '0.95rem', cursor: 'pointer', fontFamily: 'var(--font-body)', transition: `opacity var(--dur-fast) var(--ease-out)` }}
-          onMouseOver={e => e.currentTarget.style.opacity = '0.88'}
-          onMouseOut={e => e.currentTarget.style.opacity = '1'}
+          style={{ padding: '0.7rem 1.6rem', borderRadius: '50px', background: 'var(--accent)', color: 'var(--bg-surface)', fontWeight: 600, fontSize: '0.92rem', cursor: 'pointer', transition: `background var(--dur-fast) var(--ease-out)` }}
+          onMouseOver={e => e.currentTarget.style.background = 'var(--accent-hover)'}
+          onMouseOut={e => e.currentTarget.style.background = 'var(--accent)'}
         >
           Create Your First Cast
         </button>
@@ -38,91 +38,74 @@ export default function Library({ entries, onPlay, onDelete, onNewCast }) {
   }
 
   return (
-    <div style={{ width: '100%', maxWidth: '820px', animation: 'fadeSlideUp var(--dur-slow) var(--ease-out)' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '2.5rem' }}>
+    <div className="entrance" style={{ width: '100%', maxWidth: '820px' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '2rem' }}>
         <div>
-          <h2 className="display" style={{ fontSize: '2.8rem', lineHeight: 1.1 }}>
-            Your <span className="text-gradient">Library</span>
+          <h2 className="display" style={{ fontSize: '2.8rem', lineHeight: 1.08 }}>
+            Your <em className="text-gradient" style={{ fontStyle: 'italic' }}>Library</em>
           </h2>
-          <p style={{ color: 'var(--text-secondary)', marginTop: '0.5rem' }}>
+          <p style={{ color: 'var(--text-secondary)', marginTop: '0.4rem', fontSize: '0.92rem' }}>
             {entries.length} Poddy{entries.length !== 1 ? 's' : ''} saved
           </p>
         </div>
         <button
           onClick={onNewCast}
-          style={{ padding: '0.65rem 1.5rem', borderRadius: '50px', background: 'var(--accent)', color: 'white', fontWeight: 600, fontSize: '0.88rem', cursor: 'pointer', fontFamily: 'var(--font-body)', flexShrink: 0, transition: `opacity var(--dur-fast) var(--ease-out)` }}
-          onMouseOver={e => e.currentTarget.style.opacity = '0.88'}
-          onMouseOut={e => e.currentTarget.style.opacity = '1'}
+          style={{ padding: '0.55rem 1.3rem', borderRadius: '50px', background: 'var(--accent)', color: 'var(--bg-surface)', fontWeight: 600, fontSize: '0.85rem', cursor: 'pointer', flexShrink: 0, transition: `background var(--dur-fast) var(--ease-out)` }}
+          onMouseOver={e => e.currentTarget.style.background = 'var(--accent-hover)'}
+          onMouseOut={e => e.currentTarget.style.background = 'var(--accent)'}
         >
           + New Cast
         </button>
       </div>
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
         {entries.slice().reverse().map((entry) => (
           <div
             key={entry.jobId}
             className="glass-panel"
             style={{
-              display: 'flex', alignItems: 'center', gap: '1.5rem',
-              padding: '1.25rem 1.5rem',
+              display: 'flex', alignItems: 'center', gap: '1.25rem',
+              padding: '1.1rem 1.3rem',
               cursor: 'pointer',
               transition: `all var(--dur-fast) var(--ease-out)`,
-              borderRadius: '16px',
+              borderRadius: '14px',
             }}
-            onMouseOver={e => { e.currentTarget.style.border = '1px solid var(--accent-border)'; e.currentTarget.style.transform = 'translateX(4px)'; }}
-            onMouseOut={e => { e.currentTarget.style.border = '1px solid var(--border-subtle)'; e.currentTarget.style.transform = 'none'; }}
+            onMouseOver={e => { e.currentTarget.style.borderColor = 'var(--accent-border)'; e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = '0 4px 20px rgba(30,24,20,0.06)'; }}
+            onMouseOut={e => { e.currentTarget.style.borderColor = 'var(--border-subtle)'; e.currentTarget.style.transform = 'none'; e.currentTarget.style.boxShadow = '0 1px 3px rgba(30,24,20,0.04), 0 4px 16px rgba(30,24,20,0.03)'; }}
             onClick={() => onPlay(entry)}
           >
-            {/* Thumbnail */}
-            <TopicArtwork topic={entry.topic} title={entry.title} size={44} />
+            <TopicArtwork topic={entry.topic} title={entry.title} size={48} />
 
-            {/* Info */}
             <div style={{ flex: 1, minWidth: 0 }}>
-              <div className="display" style={{ fontSize: '1.05rem', marginBottom: entry.title && entry.title !== entry.topic ? '0.15rem' : '0.35rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              <div className="display" style={{ fontSize: '1.05rem', marginBottom: entry.title && entry.title !== entry.topic ? '0.1rem' : '0.3rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                 {entry.title || entry.topic}
               </div>
               {entry.title && entry.title !== entry.topic && (
-                <div style={{ color: 'var(--text-tertiary)', fontSize: '0.78rem', marginBottom: '0.25rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', fontStyle: 'italic' }}>
+                <div style={{ color: 'var(--text-tertiary)', fontSize: '0.76rem', marginBottom: '0.2rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', fontStyle: 'italic' }}>
                   {entry.topic}
                 </div>
               )}
-              <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', alignItems: 'center' }}>
-                <span style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', color: 'var(--text-tertiary)', fontSize: '0.78rem' }}>
-                  <Clock size={11} /> {formatDuration(entry.durationMs)}
+              <div style={{ display: 'flex', gap: '0.85rem', flexWrap: 'wrap', alignItems: 'center' }}>
+                <span style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', color: 'var(--text-tertiary)', fontSize: '0.75rem' }}>
+                  <Clock size={10} /> {formatDuration(entry.durationMs)}
                 </span>
-                <span style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', color: 'var(--text-tertiary)', fontSize: '0.78rem' }}>
-                  <Layers size={11} /> {entry.sourcesUsed?.length || 0} sources
+                <span style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', color: 'var(--text-tertiary)', fontSize: '0.75rem' }}>
+                  <Layers size={10} /> {entry.sourcesUsed?.length || 0} sources
                 </span>
-                <span style={{ color: 'var(--text-tertiary)', fontSize: '0.78rem' }}>
+                <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>
                   {formatDate(entry.savedAt)}
                 </span>
               </div>
-              {entry.sourcesUsed?.length > 0 && (
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem', marginTop: '0.5rem' }}>
-                  {entry.sourcesUsed.slice(0, 3).map((s, i) => (
-                    <span key={i} style={{ padding: '0.15rem 0.5rem', borderRadius: '50px', background: 'var(--bg-elevated)', border: '1px solid var(--border-subtle)', color: 'var(--text-secondary)', fontSize: '0.72rem' }}>
-                      {s}
-                    </span>
-                  ))}
-                  {entry.sourcesUsed.length > 3 && (
-                    <span style={{ color: 'var(--text-tertiary)', fontSize: '0.72rem', alignSelf: 'center' }}>
-                      +{entry.sourcesUsed.length - 3} more
-                    </span>
-                  )}
-                </div>
-              )}
             </div>
 
-            {/* Delete */}
             <button
               onClick={e => { e.stopPropagation(); onDelete(entry.jobId); }}
-              style={{ color: 'var(--text-muted)', padding: '0.5rem', borderRadius: '8px', background: 'transparent', flexShrink: 0, transition: `all var(--dur-fast) var(--ease-out)` }}
+              style={{ color: 'var(--text-muted)', padding: '0.4rem', borderRadius: '8px', background: 'transparent', flexShrink: 0, transition: `all var(--dur-fast) var(--ease-out)` }}
               onMouseOver={e => { e.currentTarget.style.color = 'var(--error)'; e.currentTarget.style.background = 'var(--error-subtle)'; }}
               onMouseOut={e => { e.currentTarget.style.color = 'var(--text-muted)'; e.currentTarget.style.background = 'transparent'; }}
               title="Remove from library"
             >
-              <Trash2 size={15} />
+              <Trash2 size={14} />
             </button>
           </div>
         ))}

@@ -18,7 +18,7 @@ function saveLibraryToStorage(entries) {
 }
 
 function App() {
-  const [appState, setAppState]         = useState('prompt'); // prompt | loading | player | library
+  const [appState, setAppState]         = useState('prompt');
   const [topic, setTopic]               = useState('');
   const [title, setTitle]               = useState('');
   const [jobId, setJobId]               = useState(null);
@@ -30,7 +30,7 @@ function App() {
   const [durationMs, setDurationMs]     = useState(0);
   const [depth, setDepth]               = useState('standard');
   const [library, setLibrary]           = useState(loadLibrary);
-  const [errorInfo, setErrorInfo]       = useState(null); // { title, detail, canRetry }
+  const [errorInfo, setErrorInfo]       = useState(null);
 
   const pollRef = useRef(null);
   const cancelledRef = useRef(false);
@@ -81,7 +81,6 @@ function App() {
           const dur   = data.duration_ms || 0;
           const genTitle = data.title || topic;
 
-          // Download the audio blob and persist it locally
           let blobUrl = null;
           try {
             const audioRes = await fetch(`${BACKEND}/audio/${id}`);
@@ -163,7 +162,6 @@ function App() {
     setDurationMs(entry.durationMs || 0);
     setErrorInfo(null);
 
-    // Try loading from IndexedDB first, fall back to server
     try {
       const blob = await loadAudioBlob(entry.jobId);
       if (blob) {
@@ -173,7 +171,6 @@ function App() {
       }
     } catch {}
 
-    // Fallback: try server (may work if server hasn't restarted)
     const serverUrl = `${BACKEND}/audio/${entry.jobId}`;
     try {
       const res = await fetch(serverUrl, { method: 'HEAD' });
@@ -203,21 +200,26 @@ function App() {
   const handleDismissError = useCallback(() => setErrorInfo(null), []);
 
   return (
-    <div style={{ minHeight: '100vh', padding: '0 1.5rem 3rem', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+    <div style={{ minHeight: '100vh', padding: '0 1.5rem 3rem', display: 'flex', flexDirection: 'column', alignItems: 'center', position: 'relative', zIndex: 1 }}>
 
-      {/* ── Header ──────────────────────────────────────────────────────────── */}
+      {/* ── Header ──────────────────────────────────── */}
       <header style={{ width: '100%', maxWidth: '860px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1.25rem 0', marginBottom: '1.5rem', borderBottom: '1px solid var(--border-subtle)' }}>
         <div
           onClick={handleReset}
-          style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', cursor: 'pointer' }}
+          style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', cursor: 'pointer' }}
         >
-          <div style={{ width: 36, height: 36, borderRadius: '10px', background: 'linear-gradient(135deg, var(--accent-dim), var(--accent))', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 2px 8px rgba(167,139,250,0.25)' }}>
-            <span style={{ color: 'white', fontWeight: 700, fontSize: '1rem', fontFamily: 'var(--font-display)' }}>P</span>
+          <div style={{
+            width: 34, height: 34, borderRadius: '50%',
+            background: 'var(--accent)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            boxShadow: '0 2px 8px rgba(191,86,48,0.20)',
+          }}>
+            <span style={{ color: 'var(--bg-surface)', fontWeight: 600, fontSize: '0.95rem', fontFamily: 'var(--font-display)' }}>P</span>
           </div>
-          <span className="display" style={{ fontSize: '1.35rem' }}>Poddy</span>
+          <span className="display" style={{ fontSize: '1.4rem', color: 'var(--text-primary)' }}>Poddy</span>
         </div>
 
-        <nav style={{ display: 'flex', gap: '0.5rem' }}>
+        <nav style={{ display: 'flex', gap: '0.35rem' }}>
           {[
             { label: 'Library', state: 'library' },
             { label: 'New Cast', state: 'prompt', primary: true },
@@ -226,14 +228,14 @@ function App() {
               key={s}
               onClick={() => { stopPolling(); setAppState(s); }}
               style={{
-                padding: '0.5rem 1.15rem', borderRadius: '50px',
-                background: primary ? 'var(--accent)' : (appState === s ? 'var(--bg-elevated)' : 'transparent'),
-                color: primary ? 'white' : (appState === s ? 'var(--text-primary)' : 'var(--text-secondary)'),
+                padding: '0.45rem 1.1rem', borderRadius: '50px',
+                background: primary ? 'var(--accent)' : (appState === s ? 'var(--bg-inset)' : 'transparent'),
+                color: primary ? 'var(--bg-surface)' : (appState === s ? 'var(--text-primary)' : 'var(--text-secondary)'),
                 fontWeight: primary ? 600 : 500,
-                fontSize: '0.88rem',
+                fontSize: '0.85rem',
                 border: primary ? 'none' : `1px solid ${appState === s ? 'var(--border-medium)' : 'transparent'}`,
                 transition: `all var(--dur-fast) var(--ease-out)`,
-                fontFamily: 'var(--font-body)',
+                letterSpacing: '0.01em',
               }}
               onMouseOver={e => { if (!primary && appState !== s) e.currentTarget.style.color = 'var(--text-primary)'; }}
               onMouseOut={e => { if (!primary && appState !== s) e.currentTarget.style.color = 'var(--text-secondary)'; }}
@@ -244,33 +246,27 @@ function App() {
         </nav>
       </header>
 
-      {/* ── Error banner ─────────────────────────────────────────────────────── */}
+      {/* ── Error banner ──────────────────────────────── */}
       {errorInfo && appState === 'prompt' && (
-        <div style={{
+        <div className="entrance" style={{
           width: '100%', maxWidth: '640px', marginBottom: '1.5rem',
-          padding: '1.25rem 1.5rem', borderRadius: '16px',
+          padding: '1.25rem 1.5rem', borderRadius: '14px',
           background: 'var(--error-subtle)', border: '1px solid var(--error-border)',
-          animation: 'fadeSlideUp var(--dur-slow) var(--ease-out)',
         }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.5rem' }}>
             <h3 style={{ color: 'var(--error)', fontSize: '0.95rem', fontWeight: 600 }}>{errorInfo.title}</h3>
-            <button
-              onClick={handleDismissError}
-              style={{ background: 'transparent', color: 'var(--text-tertiary)', fontSize: '1.2rem', lineHeight: 1, cursor: 'pointer', padding: '0 0.25rem' }}
-            >&times;</button>
+            <button onClick={handleDismissError} style={{ background: 'transparent', color: 'var(--text-tertiary)', fontSize: '1.2rem', lineHeight: 1, cursor: 'pointer', padding: '0 0.25rem' }}>&times;</button>
           </div>
-          <p style={{ color: 'var(--text-secondary)', fontSize: '0.88rem', lineHeight: 1.5 }}>{errorInfo.detail}</p>
+          <p style={{ color: 'var(--text-secondary)', fontSize: '0.88rem', lineHeight: 1.6 }}>{errorInfo.detail}</p>
           {errorInfo.canRetry && (
             <button
               onClick={handleDismissError}
               style={{
-                marginTop: '0.85rem', padding: '0.5rem 1.2rem', borderRadius: '50px',
+                marginTop: '0.85rem', padding: '0.45rem 1.1rem', borderRadius: '50px',
                 background: 'var(--error-subtle)', border: '1px solid var(--error-border)',
-                color: 'var(--error)', fontWeight: 600, fontSize: '0.82rem', cursor: 'pointer',
-                fontFamily: 'var(--font-body)', transition: `all var(--dur-fast) var(--ease-out)`,
+                color: 'var(--error)', fontWeight: 600, fontSize: '0.82rem',
+                transition: `all var(--dur-fast) var(--ease-out)`,
               }}
-              onMouseOver={e => e.currentTarget.style.background = 'rgba(239,68,68,0.18)'}
-              onMouseOut={e => e.currentTarget.style.background = 'var(--error-subtle)'}
             >
               Try again
             </button>
@@ -278,42 +274,21 @@ function App() {
         </div>
       )}
 
-      {/* ── Main content ────────────────────────────────────────────────────── */}
+      {/* ── Main content ─────────────────────────────── */}
       <main style={{ width: '100%', maxWidth: '860px', flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
         {appState === 'prompt'  && <PromptInterface onSynthesize={handleSynthesize} />}
         {appState === 'loading' && (
-          <CuratorLoadingState
-            topic={topic}
-            title={title}
-            status={loadingStatus}
-            sourceNames={sourceNames}
-            onCancel={handleCancel}
-            depth={depth}
-          />
+          <CuratorLoadingState topic={topic} title={title} status={loadingStatus} sourceNames={sourceNames} onCancel={handleCancel} depth={depth} />
         )}
         {appState === 'player'  && (
-          <SynthPlayer
-            topic={topic}
-            title={title}
-            jobId={jobId}
-            audioUrl={audioUrl}
-            chapters={chapters}
-            sourcesUsed={sourcesUsed}
-            durationMs={durationMs}
-            onBack={handleReset}
-          />
+          <SynthPlayer topic={topic} title={title} jobId={jobId} audioUrl={audioUrl} chapters={chapters} sourcesUsed={sourcesUsed} durationMs={durationMs} onBack={handleReset} />
         )}
         {appState === 'library' && (
-          <Library
-            entries={library}
-            onPlay={handlePlayLibraryEntry}
-            onDelete={deleteFromLibrary}
-            onNewCast={() => setAppState('prompt')}
-          />
+          <Library entries={library} onPlay={handlePlayLibraryEntry} onDelete={deleteFromLibrary} onNewCast={() => setAppState('prompt')} />
         )}
       </main>
 
-      <footer style={{ marginTop: '4rem', color: 'var(--text-muted)', fontSize: '0.78rem', letterSpacing: '0.02em', fontFamily: 'var(--font-body)' }}>
+      <footer style={{ marginTop: '4rem', color: 'var(--text-muted)', fontSize: '0.75rem', letterSpacing: '0.04em', fontFamily: 'var(--font-body)' }}>
         Poddy — assembling knowledge from the world's best conversations
       </footer>
     </div>

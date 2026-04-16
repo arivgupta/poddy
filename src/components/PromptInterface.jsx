@@ -34,55 +34,55 @@ export default function PromptInterface({ onSynthesize }) {
       display: 'flex',
       flexDirection: 'column',
       alignItems: 'center',
-      animation: 'fadeSlideUp var(--dur-slow) var(--ease-out)',
       position: 'relative',
     }}>
 
       <div style={{ position: 'relative', zIndex: 1, width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
 
-        {/* ── Hero text ────────────────────────────────────────────────────── */}
-        <div style={{ textAlign: 'center', marginBottom: '2.5rem' }}>
+        {/* ── Hero ───────────────────────────────── */}
+        <div className="entrance-1" style={{ textAlign: 'center', marginBottom: '2.5rem' }}>
           <h1 className="display" style={{
-            fontSize: 'clamp(2.4rem, 5vw, 3.5rem)',
-            fontWeight: 700, lineHeight: 1.1,
+            fontSize: 'clamp(2.6rem, 6vw, 4.2rem)',
+            lineHeight: 1.08,
             marginBottom: '1.25rem',
           }}>
             What do you want to<br />
-            <span className="text-gradient">deeply understand</span>?
+            <em className="text-gradient" style={{ fontStyle: 'italic' }}>deeply understand</em>?
           </h1>
 
           <p style={{
-            color: 'var(--text-secondary)', fontSize: '1rem',
-            maxWidth: '440px', lineHeight: 1.7, margin: '0 auto',
+            color: 'var(--text-secondary)', fontSize: '1.05rem',
+            maxWidth: '460px', lineHeight: 1.7, margin: '0 auto',
             fontWeight: 400,
           }}>
-            AI finds the best moments from the world's top podcasts and assembles a curated audio documentary — just for you.
+            We find the best moments from the world's top podcasts and assemble a curated listen — just for you.
           </p>
         </div>
 
-        {/* ── Main card ────────────────────────────────────────────────────── */}
+        {/* ── Main card ──────────────────────────── */}
         <form
           onSubmit={handleSubmit}
-          className="glass-panel"
+          className="glass-panel entrance-2"
           style={{
-            width: '100%', maxWidth: '640px',
+            width: '100%', maxWidth: '620px',
             padding: 0, overflow: 'hidden',
             border: isFocused ? '1px solid var(--accent-border)' : '1px solid var(--border-subtle)',
             boxShadow: isFocused
-              ? '0 0 0 3px var(--accent-subtle), 0 16px 48px rgba(0,0,0,0.4)'
-              : '0 16px 48px rgba(0,0,0,0.3)',
+              ? '0 0 0 3px var(--accent-subtle), 0 8px 32px rgba(30,24,20,0.06)'
+              : '0 4px 24px rgba(30,24,20,0.04)',
             transition: `all var(--dur-std) var(--ease-out)`,
           }}
         >
           {/* Search input */}
           <div style={{
             display: 'flex', alignItems: 'center', gap: '0.85rem',
-            padding: '1.25rem 1.5rem',
+            padding: '1.15rem 1.4rem',
             borderBottom: '1px solid var(--border-subtle)',
+            background: 'var(--bg-elevated)',
           }}>
             <Search
               size={18}
-              color={isFocused ? 'var(--accent)' : 'var(--text-tertiary)'}
+              color={isFocused ? 'var(--accent)' : 'var(--text-muted)'}
               style={{ flexShrink: 0, transition: `color var(--dur-fast) var(--ease-out)` }}
             />
             <input
@@ -96,23 +96,24 @@ export default function PromptInterface({ onSynthesize }) {
                 flex: 1, background: 'transparent', border: 'none', outline: 'none',
                 color: 'var(--text-primary)', fontSize: '1.05rem',
                 fontFamily: 'var(--font-body)',
+                letterSpacing: '0.01em',
               }}
             />
           </div>
 
           {/* Depth picker */}
           <div style={{
-            padding: '1.25rem 1.5rem',
+            padding: '1.15rem 1.4rem',
             borderBottom: '1px solid var(--border-subtle)',
           }}>
             <p style={{
-              color: 'var(--text-tertiary)', fontSize: '0.7rem',
-              textTransform: 'uppercase', letterSpacing: '0.12em',
-              marginBottom: '0.85rem', fontWeight: 500, textAlign: 'center',
+              color: 'var(--text-tertiary)', fontSize: '0.68rem',
+              textTransform: 'uppercase', letterSpacing: '0.14em',
+              marginBottom: '0.75rem', fontWeight: 600, textAlign: 'center',
             }}>
-              How deep do you want to go?
+              Depth
             </p>
-            <div style={{ display: 'flex', gap: '0.6rem', justifyContent: 'center' }}>
+            <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'center' }}>
               {DEPTHS.map(d => {
                 const active = d.value === depth;
                 return (
@@ -121,34 +122,31 @@ export default function PromptInterface({ onSynthesize }) {
                     type="button"
                     onClick={() => setDepth(d.value)}
                     style={{
-                      flex: 1, maxWidth: '170px',
-                      padding: '0.65rem 0.5rem',
-                      borderRadius: '12px',
-                      border: `1.5px solid ${active ? 'var(--accent-border)' : 'var(--border-subtle)'}`,
-                      background: active ? 'var(--accent-subtle)' : 'var(--bg-raised)',
-                      color: active ? 'var(--accent)' : 'var(--text-secondary)',
-                      display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.2rem',
+                      flex: 1, maxWidth: '165px',
+                      padding: '0.6rem 0.5rem',
+                      borderRadius: '10px',
+                      border: `1.5px solid ${active ? 'var(--accent)' : 'var(--border-medium)'}`,
+                      background: active ? 'var(--accent-subtle)' : 'var(--bg-elevated)',
+                      color: active ? 'var(--accent-text)' : 'var(--text-secondary)',
+                      display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.15rem',
                       transition: `all var(--dur-fast) var(--ease-out)`,
-                      fontFamily: 'var(--font-body)',
                       cursor: 'pointer',
                     }}
                     onMouseOver={e => {
                       if (!active) {
-                        e.currentTarget.style.borderColor = 'var(--border-medium)';
-                        e.currentTarget.style.color = 'var(--text-primary)';
-                        e.currentTarget.style.background = 'var(--bg-elevated)';
+                        e.currentTarget.style.borderColor = 'var(--border-strong)';
+                        e.currentTarget.style.background = 'var(--bg-inset)';
                       }
                     }}
                     onMouseOut={e => {
                       if (!active) {
-                        e.currentTarget.style.borderColor = 'var(--border-subtle)';
-                        e.currentTarget.style.color = 'var(--text-secondary)';
-                        e.currentTarget.style.background = 'var(--bg-raised)';
+                        e.currentTarget.style.borderColor = 'var(--border-medium)';
+                        e.currentTarget.style.background = 'var(--bg-elevated)';
                       }
                     }}
                   >
-                    <span style={{ fontWeight: 600, fontSize: '0.88rem' }}>{d.label}</span>
-                    <span style={{ fontSize: '0.7rem', opacity: 0.65 }}>{d.sources} · {d.time}</span>
+                    <span style={{ fontWeight: 600, fontSize: '0.85rem' }}>{d.label}</span>
+                    <span style={{ fontSize: '0.68rem', color: 'var(--text-tertiary)' }}>{d.sources} · {d.time}</span>
                   </button>
                 );
               })}
@@ -156,37 +154,36 @@ export default function PromptInterface({ onSynthesize }) {
           </div>
 
           {/* Submit */}
-          <div style={{ padding: '1rem 1.5rem' }}>
+          <div style={{ padding: '0.9rem 1.4rem', background: 'var(--bg-surface)' }}>
             <button
               type="submit"
               style={{
                 width: '100%',
-                background: hasText ? 'var(--accent)' : 'var(--bg-elevated)',
-                color: hasText ? 'white' : 'var(--text-muted)',
-                padding: '0.95rem',
+                background: hasText ? 'var(--accent)' : 'var(--bg-inset)',
+                color: hasText ? 'var(--bg-surface)' : 'var(--text-muted)',
+                padding: '0.85rem',
                 borderRadius: '10px',
-                fontWeight: 600, fontSize: '0.95rem',
+                fontWeight: 600, fontSize: '0.92rem',
                 display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem',
-                boxShadow: hasText ? '0 4px 16px rgba(167,139,250,0.20)' : 'none',
+                boxShadow: hasText ? '0 2px 10px rgba(191,86,48,0.18)' : 'none',
                 transition: `all var(--dur-std) var(--ease-out)`,
-                fontFamily: 'var(--font-body)',
                 cursor: hasText ? 'pointer' : 'default',
-                opacity: 1,
+                letterSpacing: '0.02em',
               }}
-              onMouseOver={e => { if (hasText) e.currentTarget.style.opacity = '0.88'; }}
-              onMouseOut={e => { if (hasText) e.currentTarget.style.opacity = '1'; }}
+              onMouseOver={e => { if (hasText) e.currentTarget.style.background = 'var(--accent-hover)'; }}
+              onMouseOut={e => { if (hasText) e.currentTarget.style.background = 'var(--accent)'; }}
             >
-              <Sparkles size={16} />
+              <Sparkles size={15} />
               Generate
             </button>
           </div>
 
           {/* Feature strip */}
           <div style={{
-            display: 'flex', justifyContent: 'center', gap: '2rem',
-            padding: '0.85rem 1.5rem',
+            display: 'flex', justifyContent: 'center', gap: '1.75rem',
+            padding: '0.75rem 1.4rem',
             borderTop: '1px solid var(--border-subtle)',
-            background: 'rgba(0,0,0,0.12)',
+            background: 'var(--bg-inset)',
           }}>
             {[
               { icon: Headphones, label: 'Real Podcasts' },
@@ -194,22 +191,23 @@ export default function PromptInterface({ onSynthesize }) {
               { icon: BookOpen,   label: 'Curriculum Ordered' },
             ].map(({ icon: Icon, label }) => (
               <div key={label} style={{
-                display: 'flex', alignItems: 'center', gap: '0.4rem',
-                color: 'var(--text-tertiary)', fontSize: '0.75rem',
+                display: 'flex', alignItems: 'center', gap: '0.35rem',
+                color: 'var(--text-tertiary)', fontSize: '0.72rem',
+                letterSpacing: '0.02em',
               }}>
-                <Icon size={12} color="var(--accent)" /> {label}
+                <Icon size={11} color="var(--accent)" /> {label}
               </div>
             ))}
           </div>
         </form>
 
-        {/* ── Suggestion chips ────────────────────────────────────────────── */}
-        <div style={{
-          marginTop: '1.75rem',
-          display: 'flex', flexWrap: 'wrap', gap: '0.55rem',
-          justifyContent: 'center', maxWidth: '640px',
+        {/* ── Suggestion chips ───────────────────── */}
+        <div className="entrance-3" style={{
+          marginTop: '1.5rem',
+          display: 'flex', flexWrap: 'wrap', gap: '0.45rem',
+          justifyContent: 'center', maxWidth: '620px',
         }}>
-          <span style={{ color: 'var(--text-muted)', fontSize: '0.72rem', width: '100%', textAlign: 'center', marginBottom: '0.25rem', letterSpacing: '0.05em' }}>
+          <span style={{ color: 'var(--text-muted)', fontSize: '0.7rem', width: '100%', textAlign: 'center', marginBottom: '0.15rem', letterSpacing: '0.08em', textTransform: 'uppercase', fontWeight: 500 }}>
             Try one of these
           </span>
           {SUGGESTIONS.map((s, i) => (
@@ -218,20 +216,20 @@ export default function PromptInterface({ onSynthesize }) {
               type="button"
               onClick={() => setQuery(s)}
               style={{
-                padding: '0.38rem 0.85rem', borderRadius: '50px',
-                background: 'var(--bg-raised)', border: '1px solid var(--border-subtle)',
-                color: 'var(--text-secondary)', fontSize: '0.82rem',
-                transition: `all var(--dur-fast) var(--ease-out)`, fontFamily: 'var(--font-body)', cursor: 'pointer',
+                padding: '0.32rem 0.75rem', borderRadius: '50px',
+                background: 'var(--bg-surface)', border: '1px solid var(--border-medium)',
+                color: 'var(--text-secondary)', fontSize: '0.8rem',
+                transition: `all var(--dur-fast) var(--ease-out)`, cursor: 'pointer',
               }}
               onMouseOver={e => {
-                e.currentTarget.style.borderColor = 'var(--accent-border)';
-                e.currentTarget.style.color = 'var(--accent)';
-                e.currentTarget.style.background = 'var(--accent-hover)';
+                e.currentTarget.style.borderColor = 'var(--accent)';
+                e.currentTarget.style.color = 'var(--accent-text)';
+                e.currentTarget.style.background = 'var(--accent-subtle)';
               }}
               onMouseOut={e => {
-                e.currentTarget.style.borderColor = 'var(--border-subtle)';
+                e.currentTarget.style.borderColor = 'var(--border-medium)';
                 e.currentTarget.style.color = 'var(--text-secondary)';
-                e.currentTarget.style.background = 'var(--bg-raised)';
+                e.currentTarget.style.background = 'var(--bg-surface)';
               }}
             >
               {s}
