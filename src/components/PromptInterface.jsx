@@ -1,10 +1,10 @@
 import React, { useState } from 'react';
-import { Search, Sparkles, Headphones, BookOpen } from 'lucide-react';
+import { Search, Sparkles, Headphones, BookOpen, Zap } from 'lucide-react';
 
 const DEPTHS = [
-  { label: 'Quick Brief',    value: 'quick',    sources: '2 sources', time: '~10 min' },
-  { label: 'Standard',       value: 'standard', sources: '3 sources', time: '~25 min' },
-  { label: 'Full Deep Dive', value: 'deep',     sources: '5 sources', time: '~50 min' },
+  { label: 'Quick',     value: 'quick',    detail: '2 sources · ~10 min', emoji: '⚡' },
+  { label: 'Standard',  value: 'standard', detail: '3 sources · ~25 min', emoji: '🎧' },
+  { label: 'Deep Dive', value: 'deep',     detail: '5 sources · ~50 min', emoji: '🌊' },
 ];
 
 const SUGGESTIONS = [
@@ -29,214 +29,117 @@ export default function PromptInterface({ onSynthesize }) {
   const hasText = query.trim().length > 0;
 
   return (
-    <div style={{
-      width: '100%',
-      display: 'flex',
-      flexDirection: 'column',
-      alignItems: 'center',
-      position: 'relative',
-    }}>
+    <div className="w-full flex flex-col items-center">
 
-      <div style={{ position: 'relative', zIndex: 1, width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+      {/* Hero */}
+      <div className="animate-entrance text-center mb-12">
+        <p className="text-terra font-medium text-sm tracking-wide uppercase mb-4">Your personal podcast studio</p>
+        <h1 className="font-display font-semibold text-[clamp(2.4rem,6.5vw,4.2rem)] leading-[1.1] -tracking-[0.02em] mb-5 text-ink-900">
+          What are you curious<br />about today?
+        </h1>
+        <p className="text-ink-500 text-base max-w-[400px] mx-auto leading-relaxed">
+          Tell us a topic and we'll assemble the best
+          podcast moments into a curated listen, just for you.
+        </p>
+      </div>
 
-        {/* ── Hero ───────────────────────────────── */}
-        <div className="entrance-1" style={{ textAlign: 'center', marginBottom: '2.5rem' }}>
-          <h1 className="display" style={{
-            fontSize: 'clamp(2.6rem, 6vw, 4.2rem)',
-            lineHeight: 1.08,
-            marginBottom: '1.25rem',
-          }}>
-            What do you want to<br />
-            <em className="text-gradient" style={{ fontStyle: 'italic' }}>deeply understand</em>?
-          </h1>
-
-          <p style={{
-            color: 'var(--text-secondary)', fontSize: '1.05rem',
-            maxWidth: '460px', lineHeight: 1.7, margin: '0 auto',
-            fontWeight: 400,
-          }}>
-            We find the best moments from the world's top podcasts and assemble a curated listen — just for you.
-          </p>
+      {/* Main card */}
+      <form
+        onSubmit={handleSubmit}
+        className={`animate-entrance delay-1 w-full max-w-[540px] rounded-3xl overflow-hidden bg-cream-50 transition-all duration-300 ${
+          isFocused
+            ? 'ring-2 ring-terra/20 shadow-[0_20px_60px_rgba(30,24,20,0.15)]'
+            : 'shadow-[0_8px_40px_rgba(30,24,20,0.10)]'
+        }`}
+      >
+        {/* Search input */}
+        <div className="flex items-center gap-3 px-6 py-5">
+          <Search size={20} className={`shrink-0 transition-colors duration-200 ${isFocused ? 'text-terra' : 'text-ink-300'}`} />
+          <input
+            type="text"
+            placeholder="e.g. the neuroscience of motivation..."
+            value={query}
+            onChange={e => setQuery(e.target.value)}
+            onFocus={() => setIsFocused(true)}
+            onBlur={() => setIsFocused(false)}
+            className="flex-1 bg-transparent outline-none text-ink-900 text-[1.05rem] placeholder:text-ink-300/80"
+          />
         </div>
 
-        {/* ── Main card ──────────────────────────── */}
-        <form
-          onSubmit={handleSubmit}
-          className="glass-panel entrance-2"
-          style={{
-            width: '100%', maxWidth: '620px',
-            padding: 0, overflow: 'hidden',
-            border: isFocused ? '1px solid var(--accent-border)' : '1px solid var(--border-subtle)',
-            boxShadow: isFocused
-              ? '0 0 0 3px var(--accent-subtle), 0 8px 32px rgba(30,24,20,0.06)'
-              : '0 4px 24px rgba(30,24,20,0.04)',
-            transition: `all var(--dur-std) var(--ease-out)`,
-          }}
-        >
-          {/* Search input */}
-          <div style={{
-            display: 'flex', alignItems: 'center', gap: '0.85rem',
-            padding: '1.15rem 1.4rem',
-            borderBottom: '1px solid var(--border-subtle)',
-            background: 'var(--bg-elevated)',
-          }}>
-            <Search
-              size={18}
-              color={isFocused ? 'var(--accent)' : 'var(--text-muted)'}
-              style={{ flexShrink: 0, transition: `color var(--dur-fast) var(--ease-out)` }}
-            />
-            <input
-              type="text"
-              placeholder="What do you want to learn about?"
-              value={query}
-              onChange={e => setQuery(e.target.value)}
-              onFocus={() => setIsFocused(true)}
-              onBlur={() => setIsFocused(false)}
-              style={{
-                flex: 1, background: 'transparent', border: 'none', outline: 'none',
-                color: 'var(--text-primary)', fontSize: '1.05rem',
-                fontFamily: 'var(--font-body)',
-                letterSpacing: '0.01em',
-              }}
-            />
-          </div>
+        <div className="h-px bg-ink-900/5 mx-5" />
 
-          {/* Depth picker */}
-          <div style={{
-            padding: '1.15rem 1.4rem',
-            borderBottom: '1px solid var(--border-subtle)',
-          }}>
-            <p style={{
-              color: 'var(--text-tertiary)', fontSize: '0.68rem',
-              textTransform: 'uppercase', letterSpacing: '0.14em',
-              marginBottom: '0.75rem', fontWeight: 600, textAlign: 'center',
-            }}>
-              Depth
-            </p>
-            <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'center' }}>
-              {DEPTHS.map(d => {
-                const active = d.value === depth;
-                return (
-                  <button
-                    key={d.value}
-                    type="button"
-                    onClick={() => setDepth(d.value)}
-                    style={{
-                      flex: 1, maxWidth: '165px',
-                      padding: '0.6rem 0.5rem',
-                      borderRadius: '10px',
-                      border: `1.5px solid ${active ? 'var(--accent)' : 'var(--border-medium)'}`,
-                      background: active ? 'var(--accent-subtle)' : 'var(--bg-elevated)',
-                      color: active ? 'var(--accent-text)' : 'var(--text-secondary)',
-                      display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.15rem',
-                      transition: `all var(--dur-fast) var(--ease-out)`,
-                      cursor: 'pointer',
-                    }}
-                    onMouseOver={e => {
-                      if (!active) {
-                        e.currentTarget.style.borderColor = 'var(--border-strong)';
-                        e.currentTarget.style.background = 'var(--bg-inset)';
-                      }
-                    }}
-                    onMouseOut={e => {
-                      if (!active) {
-                        e.currentTarget.style.borderColor = 'var(--border-medium)';
-                        e.currentTarget.style.background = 'var(--bg-elevated)';
-                      }
-                    }}
-                  >
-                    <span style={{ fontWeight: 600, fontSize: '0.85rem' }}>{d.label}</span>
-                    <span style={{ fontSize: '0.68rem', color: 'var(--text-tertiary)' }}>{d.sources} · {d.time}</span>
-                  </button>
-                );
-              })}
-            </div>
+        {/* Depth picker */}
+        <div className="px-5 py-4">
+          <div className="flex gap-2">
+            {DEPTHS.map(d => {
+              const active = d.value === depth;
+              return (
+                <button
+                  key={d.value}
+                  type="button"
+                  onClick={() => setDepth(d.value)}
+                  className={`flex-1 py-3 px-3 rounded-2xl flex flex-col items-center gap-1 transition-all duration-200 cursor-pointer ${
+                    active
+                      ? 'bg-terra text-white shadow-[0_4px_16px_rgba(191,86,48,0.25)]'
+                      : 'bg-cream-200/60 text-ink-500 hover:bg-cream-200'
+                  }`}
+                >
+                  <span className="text-lg leading-none">{d.emoji}</span>
+                  <span className="font-semibold text-sm">{d.label}</span>
+                  <span className={`text-[0.6rem] ${active ? 'text-white/60' : 'text-ink-400'}`}>{d.detail}</span>
+                </button>
+              );
+            })}
           </div>
+        </div>
 
-          {/* Submit */}
-          <div style={{ padding: '0.9rem 1.4rem', background: 'var(--bg-surface)' }}>
-            <button
-              type="submit"
-              style={{
-                width: '100%',
-                background: hasText ? 'var(--accent)' : 'var(--bg-inset)',
-                color: hasText ? 'var(--bg-surface)' : 'var(--text-muted)',
-                padding: '0.85rem',
-                borderRadius: '10px',
-                fontWeight: 600, fontSize: '0.92rem',
-                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem',
-                boxShadow: hasText ? '0 2px 10px rgba(191,86,48,0.18)' : 'none',
-                transition: `all var(--dur-std) var(--ease-out)`,
-                cursor: hasText ? 'pointer' : 'default',
-                letterSpacing: '0.02em',
-              }}
-              onMouseOver={e => { if (hasText) e.currentTarget.style.background = 'var(--accent-hover)'; }}
-              onMouseOut={e => { if (hasText) e.currentTarget.style.background = 'var(--accent)'; }}
-            >
-              <Sparkles size={15} />
-              Generate
-            </button>
+        {/* Submit */}
+        <div className="px-5 pb-5">
+          <button
+            type="submit"
+            disabled={!hasText}
+            className={`w-full py-4 rounded-2xl font-semibold text-base flex items-center justify-center gap-2.5 transition-all duration-200 ${
+              hasText
+                ? 'bg-terra text-white hover:bg-terra-light active:scale-[0.98] shadow-[0_6px_20px_rgba(191,86,48,0.30)]'
+                : 'bg-cream-200/80 text-ink-300 cursor-not-allowed'
+            }`}
+          >
+            <Sparkles size={18} />
+            Make my Poddy
+          </button>
+        </div>
+      </form>
+
+      {/* Trust markers */}
+      <div className="animate-entrance delay-2 flex items-center gap-5 mt-6 text-ink-400">
+        {[
+          { icon: Headphones, label: 'Real podcast clips' },
+          { icon: Sparkles,   label: 'AI narration' },
+          { icon: BookOpen,   label: 'Smart ordering' },
+        ].map(({ icon: Icon, label }) => (
+          <div key={label} className="flex items-center gap-1.5 text-[0.72rem] font-medium">
+            <Icon size={12} className="text-terra/60" /> {label}
           </div>
+        ))}
+      </div>
 
-          {/* Feature strip */}
-          <div style={{
-            display: 'flex', justifyContent: 'center', gap: '1.75rem',
-            padding: '0.75rem 1.4rem',
-            borderTop: '1px solid var(--border-subtle)',
-            background: 'var(--bg-inset)',
-          }}>
-            {[
-              { icon: Headphones, label: 'Real Podcasts' },
-              { icon: Sparkles,   label: 'AI Narrated' },
-              { icon: BookOpen,   label: 'Curriculum Ordered' },
-            ].map(({ icon: Icon, label }) => (
-              <div key={label} style={{
-                display: 'flex', alignItems: 'center', gap: '0.35rem',
-                color: 'var(--text-tertiary)', fontSize: '0.72rem',
-                letterSpacing: '0.02em',
-              }}>
-                <Icon size={11} color="var(--accent)" /> {label}
-              </div>
-            ))}
-          </div>
-        </form>
-
-        {/* ── Suggestion chips ───────────────────── */}
-        <div className="entrance-3" style={{
-          marginTop: '1.5rem',
-          display: 'flex', flexWrap: 'wrap', gap: '0.45rem',
-          justifyContent: 'center', maxWidth: '620px',
-        }}>
-          <span style={{ color: 'var(--text-muted)', fontSize: '0.7rem', width: '100%', textAlign: 'center', marginBottom: '0.15rem', letterSpacing: '0.08em', textTransform: 'uppercase', fontWeight: 500 }}>
-            Try one of these
-          </span>
+      {/* Suggestion chips */}
+      <div className="animate-entrance delay-3 mt-10 flex flex-col items-center gap-3 max-w-[540px]">
+        <span className="text-ink-400 text-[0.7rem] tracking-[0.08em] uppercase font-medium">
+          or try one of these
+        </span>
+        <div className="flex flex-wrap gap-2 justify-center">
           {SUGGESTIONS.map((s, i) => (
             <button
               key={i}
               type="button"
               onClick={() => setQuery(s)}
-              style={{
-                padding: '0.32rem 0.75rem', borderRadius: '50px',
-                background: 'var(--bg-surface)', border: '1px solid var(--border-medium)',
-                color: 'var(--text-secondary)', fontSize: '0.8rem',
-                transition: `all var(--dur-fast) var(--ease-out)`, cursor: 'pointer',
-              }}
-              onMouseOver={e => {
-                e.currentTarget.style.borderColor = 'var(--accent)';
-                e.currentTarget.style.color = 'var(--accent-text)';
-                e.currentTarget.style.background = 'var(--accent-subtle)';
-              }}
-              onMouseOut={e => {
-                e.currentTarget.style.borderColor = 'var(--border-medium)';
-                e.currentTarget.style.color = 'var(--text-secondary)';
-                e.currentTarget.style.background = 'var(--bg-surface)';
-              }}
+              className="px-4 py-2 rounded-full bg-cream-50/80 border border-ink-900/6 text-ink-500 text-[0.82rem] hover:bg-terra/8 hover:border-terra/20 hover:text-terra-dark transition-all duration-200 cursor-pointer"
             >
               {s}
             </button>
           ))}
         </div>
-
       </div>
     </div>
   );

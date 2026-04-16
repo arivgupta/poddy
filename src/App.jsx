@@ -200,73 +200,49 @@ function App() {
   const handleDismissError = useCallback(() => setErrorInfo(null), []);
 
   return (
-    <div style={{ minHeight: '100vh', padding: '0 1.5rem 3rem', display: 'flex', flexDirection: 'column', alignItems: 'center', position: 'relative', zIndex: 1 }}>
+    <div className="min-h-screen px-6 pb-12 flex flex-col items-center relative z-1">
 
-      {/* ── Header ──────────────────────────────────── */}
-      <header style={{ width: '100%', maxWidth: '860px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1.25rem 0', marginBottom: '1.5rem', borderBottom: '1px solid var(--border-subtle)' }}>
-        <div
-          onClick={handleReset}
-          style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', cursor: 'pointer' }}
-        >
-          <div style={{
-            width: 34, height: 34, borderRadius: '50%',
-            background: 'var(--accent)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            boxShadow: '0 2px 8px rgba(191,86,48,0.20)',
-          }}>
-            <span style={{ color: 'var(--bg-surface)', fontWeight: 600, fontSize: '0.95rem', fontFamily: 'var(--font-display)' }}>P</span>
+      {/* Header */}
+      <header className="w-full max-w-[860px] flex justify-between items-center py-5 mb-6 border-b border-ink-900/6">
+        <div onClick={handleReset} className="flex items-center gap-2.5 cursor-pointer group">
+          <div className="w-[34px] h-[34px] rounded-full bg-terra flex items-center justify-center shadow-[0_2px_8px_rgba(191,86,48,0.25)]">
+            <span className="text-cream-50 font-semibold text-[0.95rem] font-display">P</span>
           </div>
-          <span className="display" style={{ fontSize: '1.4rem', color: 'var(--text-primary)' }}>Poddy</span>
+          <span className="font-display font-semibold text-[1.4rem] text-ink-900 group-hover:text-terra transition-colors">Poddy</span>
         </div>
 
-        <nav style={{ display: 'flex', gap: '0.35rem' }}>
-          {[
-            { label: 'Library', state: 'library' },
-            { label: 'New Cast', state: 'prompt', primary: true },
-          ].map(({ label, state: s, primary }) => (
-            <button
-              key={s}
-              onClick={() => { stopPolling(); setAppState(s); }}
-              style={{
-                padding: '0.45rem 1.1rem', borderRadius: '50px',
-                background: primary ? 'var(--accent)' : (appState === s ? 'var(--bg-inset)' : 'transparent'),
-                color: primary ? 'var(--bg-surface)' : (appState === s ? 'var(--text-primary)' : 'var(--text-secondary)'),
-                fontWeight: primary ? 600 : 500,
-                fontSize: '0.85rem',
-                border: primary ? 'none' : `1px solid ${appState === s ? 'var(--border-medium)' : 'transparent'}`,
-                transition: `all var(--dur-fast) var(--ease-out)`,
-                letterSpacing: '0.01em',
-              }}
-              onMouseOver={e => { if (!primary && appState !== s) e.currentTarget.style.color = 'var(--text-primary)'; }}
-              onMouseOut={e => { if (!primary && appState !== s) e.currentTarget.style.color = 'var(--text-secondary)'; }}
-            >
-              {label}
-            </button>
-          ))}
+        <nav className="flex gap-1.5">
+          <button
+            onClick={() => { stopPolling(); setAppState('library'); }}
+            className={`px-4 py-2 rounded-full text-sm font-medium transition-all ${
+              appState === 'library'
+                ? 'bg-cream-200 text-ink-900 border border-ink-900/10'
+                : 'text-ink-500 hover:text-ink-900 border border-transparent'
+            }`}
+          >
+            Library
+          </button>
+          <button
+            onClick={() => { stopPolling(); setAppState('prompt'); }}
+            className="px-4 py-2 rounded-full text-sm font-semibold bg-terra text-white hover:bg-terra-light transition-colors shadow-[0_2px_8px_rgba(191,86,48,0.20)]"
+          >
+            New Cast
+          </button>
         </nav>
       </header>
 
-      {/* ── Error banner ──────────────────────────────── */}
+      {/* Error banner */}
       {errorInfo && appState === 'prompt' && (
-        <div className="entrance" style={{
-          width: '100%', maxWidth: '640px', marginBottom: '1.5rem',
-          padding: '1.25rem 1.5rem', borderRadius: '14px',
-          background: 'var(--error-subtle)', border: '1px solid var(--error-border)',
-        }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.5rem' }}>
-            <h3 style={{ color: 'var(--error)', fontSize: '0.95rem', fontWeight: 600 }}>{errorInfo.title}</h3>
-            <button onClick={handleDismissError} style={{ background: 'transparent', color: 'var(--text-tertiary)', fontSize: '1.2rem', lineHeight: 1, cursor: 'pointer', padding: '0 0.25rem' }}>&times;</button>
+        <div className="animate-entrance w-full max-w-[640px] mb-6 p-5 rounded-2xl bg-error/7 border border-error/18">
+          <div className="flex justify-between items-start mb-2">
+            <h3 className="text-error text-[0.95rem] font-semibold">{errorInfo.title}</h3>
+            <button onClick={handleDismissError} className="text-ink-400 hover:text-ink-900 text-xl leading-none transition-colors">&times;</button>
           </div>
-          <p style={{ color: 'var(--text-secondary)', fontSize: '0.88rem', lineHeight: 1.6 }}>{errorInfo.detail}</p>
+          <p className="text-ink-500 text-sm leading-relaxed">{errorInfo.detail}</p>
           {errorInfo.canRetry && (
             <button
               onClick={handleDismissError}
-              style={{
-                marginTop: '0.85rem', padding: '0.45rem 1.1rem', borderRadius: '50px',
-                background: 'var(--error-subtle)', border: '1px solid var(--error-border)',
-                color: 'var(--error)', fontWeight: 600, fontSize: '0.82rem',
-                transition: `all var(--dur-fast) var(--ease-out)`,
-              }}
+              className="mt-3 px-4 py-1.5 rounded-full bg-error/7 border border-error/18 text-error font-semibold text-sm hover:bg-error/12 transition-colors"
             >
               Try again
             </button>
@@ -274,8 +250,8 @@ function App() {
         </div>
       )}
 
-      {/* ── Main content ─────────────────────────────── */}
-      <main style={{ width: '100%', maxWidth: '860px', flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+      {/* Main content */}
+      <main className="w-full max-w-[860px] flex-1 flex flex-col items-center">
         {appState === 'prompt'  && <PromptInterface onSynthesize={handleSynthesize} />}
         {appState === 'loading' && (
           <CuratorLoadingState topic={topic} title={title} status={loadingStatus} sourceNames={sourceNames} onCancel={handleCancel} depth={depth} />
@@ -288,7 +264,7 @@ function App() {
         )}
       </main>
 
-      <footer style={{ marginTop: '4rem', color: 'var(--text-muted)', fontSize: '0.75rem', letterSpacing: '0.04em', fontFamily: 'var(--font-body)' }}>
+      <footer className="mt-16 text-ink-400 text-xs tracking-wide font-body">
         Poddy — assembling knowledge from the world's best conversations
       </footer>
     </div>

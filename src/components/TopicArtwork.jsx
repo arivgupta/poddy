@@ -1,14 +1,14 @@
 import React from 'react';
 
 const PALETTES = [
-  ['#BF5630', '#D4915A'],  // terracotta -> amber
-  ['#3D7A5F', '#6AAF8B'],  // sage -> forest
-  ['#9E7462', '#C9A690'],  // dusty rose -> cream
-  ['#8B7355', '#B89E6F'],  // ochre -> gold
-  ['#5C6B4E', '#9AAF6B'],  // olive -> chartreuse
-  ['#8C4A3C', '#B86B5A'],  // clay -> brick
-  ['#3C6E8C', '#6BA3C4'],  // denim -> sky
-  ['#7A5C6A', '#A4899A'],  // plum -> mauve
+  { bg: '#3D2B1F', shapes: ['#BF5630', '#D4915A', '#E8C9A0', '#6B4226'] },
+  { bg: '#1E3A2F', shapes: ['#3D7A5F', '#6AAF8B', '#A8D5BA', '#2C5446'] },
+  { bg: '#2D2438', shapes: ['#7A5C6A', '#A4899A', '#D4B5C7', '#5C3D52'] },
+  { bg: '#2A1F14', shapes: ['#8B7355', '#B89E6F', '#D4C49A', '#6B5535'] },
+  { bg: '#1A2A3A', shapes: ['#3C6E8C', '#6BA3C4', '#A0CCE0', '#2A5070'] },
+  { bg: '#3A1F1F', shapes: ['#8C4A3C', '#B86B5A', '#D4A090', '#6B3030'] },
+  { bg: '#2A2A1A', shapes: ['#5C6B4E', '#8B9E60', '#B8C87A', '#3D4A30'] },
+  { bg: '#2E1A28', shapes: ['#9E7462', '#C49E80', '#DFC4A8', '#7A4E5A'] },
 ];
 
 function hashString(str) {
@@ -19,84 +19,77 @@ function hashString(str) {
   return Math.abs(hash);
 }
 
+function seededRandom(seed) {
+  const x = Math.sin(seed) * 10000;
+  return x - Math.floor(x);
+}
+
 export default function TopicArtwork({ topic, title, size = 120, isPlaying = false }) {
   const hash = hashString(topic || '');
   const palette = PALETTES[hash % PALETTES.length];
-  const angle = (hash % 360);
-  const patternType = hash % 3;
+  const borderRadius = size >= 100 ? 14 : size >= 60 ? 12 : 10;
+
+  const shapes = [];
+  for (let i = 0; i < 7; i++) {
+    const r = seededRandom(hash + i * 137);
+    const r2 = seededRandom(hash + i * 251);
+    const r3 = seededRandom(hash + i * 397);
+    const cx = r * 120;
+    const cy = r2 * 120;
+    const radius = 15 + r3 * 45;
+    const color = palette.shapes[i % palette.shapes.length];
+    shapes.push({ cx, cy, radius, color, opacity: 0.3 + r3 * 0.4 });
+  }
 
   const displayText = title || topic || '';
   const monogram = displayText.trim().charAt(0).toUpperCase();
-
-  const fontSize = size >= 100 ? size * 0.38 : size * 0.42;
-  const borderRadius = size >= 100 ? 14 : 10;
+  const fontSize = size >= 100 ? size * 0.32 : size * 0.38;
 
   return (
-    <div style={{
-      width: size, height: size, borderRadius, flexShrink: 0,
-      position: 'relative', overflow: 'hidden',
-      background: `linear-gradient(${angle}deg, ${palette[0]}, ${palette[1]})`,
-      border: '1px solid rgba(30,24,20,0.08)',
-      boxShadow: '0 2px 8px rgba(30,24,20,0.10)',
-    }}>
-      {/* Geometric pattern overlay */}
+    <div
+      className="shrink-0 relative overflow-hidden"
+      style={{
+        width: size, height: size, borderRadius,
+        background: palette.bg,
+        boxShadow: size >= 80
+          ? '0 4px 20px rgba(0,0,0,0.25), inset 0 1px 0 rgba(255,255,255,0.06)'
+          : '0 2px 10px rgba(0,0,0,0.20)',
+      }}
+    >
       <svg
-        style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', opacity: 0.10 }}
+        className="absolute inset-0 w-full h-full"
         viewBox="0 0 120 120"
         xmlns="http://www.w3.org/2000/svg"
       >
-        {patternType === 0 && (
-          <>
-            {Array.from({ length: 36 }, (_, i) => {
-              const x = (i % 6) * 22 + 10;
-              const y = Math.floor(i / 6) * 22 + 10;
-              return <circle key={i} cx={x} cy={y} r={1.5} fill="white" />;
-            })}
-          </>
-        )}
-        {patternType === 1 && (
-          <>
-            <circle cx="60" cy="60" r="18" fill="none" stroke="white" strokeWidth="0.8" />
-            <circle cx="60" cy="60" r="34" fill="none" stroke="white" strokeWidth="0.8" />
-            <circle cx="60" cy="60" r="50" fill="none" stroke="white" strokeWidth="0.8" />
-          </>
-        )}
-        {patternType === 2 && (
-          <>
-            {Array.from({ length: 8 }, (_, i) => (
-              <line key={i} x1={i * 20 - 20} y1="0" x2={i * 20 + 120} y2="140" stroke="white" strokeWidth="0.7" />
-            ))}
-          </>
-        )}
+        {shapes.map((s, i) => (
+          <circle key={i} cx={s.cx} cy={s.cy} r={s.radius} fill={s.color} opacity={s.opacity} />
+        ))}
+        <filter id={`grain-${hash}`}>
+          <feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="3" />
+          <feColorMatrix type="saturate" values="0" />
+        </filter>
+        <rect width="120" height="120" filter={`url(#grain-${hash})`} opacity="0.06" />
       </svg>
 
-      {/* Monogram */}
-      <div style={{
-        position: 'absolute', inset: 0,
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-      }}>
-        <span style={{
-          fontFamily: 'var(--font-display)',
-          fontSize,
-          fontWeight: 400,
-          fontStyle: 'italic',
-          color: 'rgba(255,255,255,0.22)',
-          lineHeight: 1,
-          userSelect: 'none',
-        }}>
+      <div className="absolute inset-0 flex items-center justify-center">
+        <span
+          className="font-display leading-none select-none"
+          style={{
+            fontSize,
+            color: 'rgba(255,255,255,0.45)',
+            textShadow: '0 2px 8px rgba(0,0,0,0.3)',
+          }}
+        >
           {monogram}
         </span>
       </div>
 
-      {/* Playing indicator */}
       {isPlaying && size >= 80 && (
-        <div style={{ position: 'absolute', bottom: 6, left: '50%', transform: 'translateX(-50%)', display: 'flex', gap: 2, alignItems: 'flex-end' }}>
+        <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex gap-[3px] items-end">
           {[1,2,3,4,5].map(i => (
-            <div key={i} style={{
-              width: 2.5, borderRadius: 1.5,
-              background: 'rgba(255,255,255,0.65)',
+            <div key={i} className="w-[3px] rounded-sm bg-white/75" style={{
               animation: `float ${0.4 + i * 0.15}s ease-in-out infinite alternate`,
-              height: `${4 + i * 2.5}px`,
+              height: `${5 + i * 3}px`,
             }} />
           ))}
         </div>

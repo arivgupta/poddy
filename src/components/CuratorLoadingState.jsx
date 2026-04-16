@@ -43,52 +43,44 @@ export default function CuratorLoadingState({ topic, title, status, sourceNames,
   const etaText    = ETA_RANGES[depth] || ETA_RANGES.standard;
 
   return (
-    <div className="entrance" style={{ width: '100%', maxWidth: '540px', textAlign: 'center' }}>
+    <div className="animate-entrance w-full max-w-[540px] text-center">
 
       {/* Animated orb */}
-      <div style={{ position: 'relative', width: 110, height: 110, margin: '0 auto 2.5rem' }}>
-        <div style={{
-          position: 'absolute', inset: 0, borderRadius: '50%',
-          background: 'conic-gradient(var(--accent), #D4915A, var(--clip-accent), var(--accent))',
-          animation: 'spin-slow 6s linear infinite',
-          opacity: 0.35,
-          filter: 'blur(6px)',
-        }} />
-        <div style={{
-          position: 'absolute', inset: 5, borderRadius: '50%',
-          background: 'var(--bg-base)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-        }}>
-          <StageIcon size={28} color="var(--accent)" style={{ animation: stageInfo.icon === Loader2 ? 'spin-slow 1.2s linear infinite' : undefined }} />
+      <div className="relative w-28 h-28 mx-auto mb-10">
+        <div
+          className="absolute inset-0 rounded-full opacity-40 blur-md animate-spin-slow"
+          style={{ background: 'conic-gradient(var(--color-terra), #D4915A, var(--color-sage), var(--color-terra))' }}
+        />
+        <div className="absolute inset-[5px] rounded-full bg-cream-100 flex items-center justify-center">
+          <StageIcon
+            size={28}
+            className="text-terra"
+            style={{ animation: stageInfo.icon === Loader2 ? 'spin-slow 1.2s linear infinite' : undefined }}
+          />
         </div>
-        <div style={{
-          position: 'absolute', inset: -6, borderRadius: '50%',
-          border: '1.5px solid var(--accent)',
-          opacity: 0.12,
-          animation: 'pulse-ring 3s ease-in-out infinite',
-        }} />
+        <div className="absolute inset-[-6px] rounded-full border-[1.5px] border-terra/12 animate-pulse-ring" />
       </div>
 
-      <h2 className="display" style={{ fontSize: '1.8rem', marginBottom: '0.5rem' }}>
-        Curating <em className="text-gradient" style={{ fontStyle: 'italic' }}>"{title || topic}"</em>
+      <h2 className="font-display font-semibold text-[1.8rem] mb-2">
+        Curating <span className="text-terra">"{title || topic}"</span>
       </h2>
       {title && title !== topic && (
-        <p style={{ color: 'var(--text-tertiary)', fontSize: '0.8rem', marginBottom: '0.2rem', fontStyle: 'italic' }}>{topic}</p>
+        <p className="text-ink-400 text-sm mb-1">{topic}</p>
       )}
 
-      <p style={{ color: 'var(--text-secondary)', fontSize: '0.95rem', marginBottom: '0.4rem', minHeight: '1.4rem' }}>
+      <p className="text-ink-500 text-base mb-1.5 min-h-[1.4rem]">
         {stageInfo.text}{dots}
       </p>
 
-      <p style={{ color: 'var(--text-tertiary)', fontSize: '0.76rem', marginBottom: sourceNames.length > 0 ? '1rem' : '1.75rem' }}>
+      <p className={`text-ink-400 text-xs ${sourceNames.length > 0 ? 'mb-4' : 'mb-7'}`}>
         {elapsedMin > 0 ? `${elapsedMin}m ${elapsedSec}s` : `${elapsedSec}s`} elapsed · Usually takes {etaText}
       </p>
 
       {sourceNames.length > 0 && (
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem', justifyContent: 'center', marginBottom: '1.75rem' }}>
-          <span style={{ color: 'var(--text-tertiary)', fontSize: '0.72rem', width: '100%', marginBottom: '0.1rem', letterSpacing: '0.06em', textTransform: 'uppercase', fontWeight: 500 }}>Sources selected</span>
+        <div className="flex flex-wrap gap-1.5 justify-center mb-7">
+          <span className="text-ink-400 text-[0.72rem] w-full mb-0.5 tracking-[0.06em] uppercase font-medium">Sources selected</span>
           {sourceNames.map((name, i) => (
-            <span key={i} style={{ padding: '0.22rem 0.65rem', borderRadius: '50px', background: 'var(--bg-surface)', border: '1px solid var(--accent-border)', color: 'var(--accent-text)', fontSize: '0.8rem', fontWeight: 500 }}>
+            <span key={i} className="px-3 py-1 rounded-full bg-cream-50 border border-terra/20 text-terra-dark text-sm font-medium">
               {name}
             </span>
           ))}
@@ -96,28 +88,29 @@ export default function CuratorLoadingState({ topic, title, status, sourceNames,
       )}
 
       {/* Progress */}
-      <div style={{ background: 'var(--bg-wash)', borderRadius: 6, height: 4, marginBottom: '0.5rem', overflow: 'hidden' }}>
-        <div style={{
-          height: '100%',
-          width: `${pct}%`,
-          background: 'var(--accent)',
-          borderRadius: 6,
-          transition: 'width 0.6s var(--ease-out)',
-        }} />
+      <div className="bg-cream-300 rounded-full h-1.5 mb-2 overflow-hidden">
+        <div
+          className="h-full bg-terra rounded-full transition-[width] duration-600 ease-out"
+          style={{ width: `${pct}%` }}
+        />
       </div>
-      <div style={{ color: 'var(--text-tertiary)', fontSize: '0.75rem', marginBottom: '2rem', textAlign: 'right' }}>
-        {pct}%
-      </div>
+      <div className="text-ink-400 text-xs mb-8 text-right">{pct}%</div>
 
       {/* Steps */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', textAlign: 'left', marginBottom: '1.75rem' }}>
+      <div className="flex flex-col gap-1.5 text-left mb-7">
         {STAGES_ORDER.map((s, i) => {
           const done    = i < stageIdx;
           const active  = i === stageIdx;
           return (
-            <div key={s} style={{ display: 'flex', alignItems: 'center', gap: '0.7rem', padding: '0.5rem 0.75rem', borderRadius: '8px', background: active ? 'var(--accent-subtle)' : 'transparent', border: `1px solid ${active ? 'var(--accent-border)' : 'transparent'}`, transition: `all var(--dur-std) var(--ease-out)` }}>
-              <div style={{ width: 6, height: 6, borderRadius: '50%', flexShrink: 0, background: done ? 'var(--accent)' : active ? 'var(--narration-accent)' : 'var(--text-muted)', boxShadow: active ? '0 0 5px var(--narration-accent)' : 'none', transition: `all var(--dur-std) var(--ease-out)` }} />
-              <span style={{ fontSize: '0.82rem', color: done ? 'var(--text-secondary)' : active ? 'var(--text-primary)' : 'var(--text-muted)', fontWeight: active ? 500 : 400 }}>
+            <div key={s} className={`flex items-center gap-3 px-3 py-2 rounded-lg transition-all ${
+              active ? 'bg-terra/6 border border-terra/15' : 'border border-transparent'
+            }`}>
+              <div className={`w-1.5 h-1.5 rounded-full shrink-0 transition-all ${
+                done ? 'bg-terra' : active ? 'bg-dusty shadow-[0_0_5px_var(--color-dusty)]' : 'bg-ink-300'
+              }`} />
+              <span className={`text-sm ${
+                done ? 'text-ink-500' : active ? 'text-ink-900 font-medium' : 'text-ink-300'
+              }`}>
                 {STAGE_LABELS[s]?.text || s}
               </span>
             </div>
@@ -128,15 +121,7 @@ export default function CuratorLoadingState({ topic, title, status, sourceNames,
       {onCancel && (
         <button
           onClick={onCancel}
-          style={{
-            display: 'inline-flex', alignItems: 'center', gap: '0.35rem',
-            padding: '0.5rem 1.15rem', borderRadius: '50px',
-            background: 'transparent', border: '1px solid var(--border-medium)',
-            color: 'var(--text-tertiary)', fontSize: '0.8rem', fontWeight: 500,
-            cursor: 'pointer', transition: `all var(--dur-fast) var(--ease-out)`,
-          }}
-          onMouseOver={e => { e.currentTarget.style.borderColor = 'var(--error)'; e.currentTarget.style.color = 'var(--error)'; }}
-          onMouseOut={e => { e.currentTarget.style.borderColor = 'var(--border-medium)'; e.currentTarget.style.color = 'var(--text-tertiary)'; }}
+          className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full border border-ink-900/10 text-ink-400 text-sm font-medium hover:border-error hover:text-error transition-colors"
         >
           <X size={12} /> Cancel
         </button>
