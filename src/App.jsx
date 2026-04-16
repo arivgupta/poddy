@@ -20,6 +20,7 @@ function saveLibraryToStorage(entries) {
 function App() {
   const [appState, setAppState]         = useState('prompt'); // prompt | loading | player | library
   const [topic, setTopic]               = useState('');
+  const [title, setTitle]               = useState('');
   const [jobId, setJobId]               = useState(null);
   const [loadingStatus, setLoadingStatus] = useState('');
   const [sourceNames, setSourceNames]   = useState([]);
@@ -71,12 +72,14 @@ function App() {
 
         setLoadingStatus(data.status);
         if (data.source_names) setSourceNames(data.source_names);
+        if (data.title) setTitle(data.title);
 
         if (data.status === 'done') {
           stopPolling();
           const chaps = data.chapters || [];
           const used  = data.sources_used || [];
           const dur   = data.duration_ms || 0;
+          const genTitle = data.title || topic;
 
           // Download the audio blob and persist it locally
           let blobUrl = null;
@@ -91,12 +94,13 @@ function App() {
             blobUrl = `${BACKEND}/audio/${id}`;
           }
 
+          setTitle(genTitle);
           setChapters(chaps);
           setSourcesUsed(used);
           setDurationMs(dur);
           setAudioUrl(blobUrl);
           setAppState('player');
-          addToLibrary({ jobId: id, topic: data.topic || topic, chapters: chaps, sourcesUsed: used, durationMs: dur, savedAt: Date.now() });
+          addToLibrary({ jobId: id, topic: data.topic || topic, title: genTitle, chapters: chaps, sourcesUsed: used, durationMs: dur, savedAt: Date.now() });
 
         } else if (data.status === 'error') {
           stopPolling();
@@ -113,6 +117,7 @@ function App() {
 
   const handleSynthesize = async (query, selectedDepth) => {
     setTopic(query);
+    setTitle('');
     setDepth(selectedDepth);
     setAppState('loading');
     setLoadingStatus('queued');
@@ -151,6 +156,7 @@ function App() {
   const handlePlayLibraryEntry = useCallback(async (entry) => {
     stopPolling();
     setTopic(entry.topic);
+    setTitle(entry.title || entry.topic);
     setJobId(entry.jobId);
     setChapters(entry.chapters || []);
     setSourcesUsed(entry.sourcesUsed || []);
@@ -190,7 +196,7 @@ function App() {
     stopPolling();
     if (audioUrl && audioUrl.startsWith('blob:')) URL.revokeObjectURL(audioUrl);
     setAppState('prompt');
-    setTopic(''); setJobId(null); setChapters([]); setSourcesUsed([]); setAudioUrl(null); setDurationMs(0);
+    setTopic(''); setTitle(''); setJobId(null); setChapters([]); setSourcesUsed([]); setAudioUrl(null); setDurationMs(0);
     setErrorInfo(null);
   }, [stopPolling, audioUrl]);
 
@@ -205,10 +211,10 @@ function App() {
           onClick={handleReset}
           style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', cursor: 'pointer' }}
         >
-          <div style={{ width: 36, height: 36, borderRadius: '10px', background: 'linear-gradient(135deg, var(--amber), var(--coral))', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 4px 14px rgba(245,166,35,0.35)' }}>
-            <span style={{ color: 'black', fontWeight: 900, fontSize: '1rem', fontFamily: 'var(--font-display)', fontStyle: 'italic' }}>P</span>
+          <div style={{ width: 36, height: 36, borderRadius: '10px', background: 'linear-gradient(135deg, var(--accent-dim), var(--accent))', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 2px 8px rgba(167,139,250,0.25)' }}>
+            <span style={{ color: 'white', fontWeight: 700, fontSize: '1rem', fontFamily: 'var(--font-display)' }}>P</span>
           </div>
-          <span className="display" style={{ fontSize: '1.35rem', fontWeight: 700, letterSpacing: '-0.02em' }}>Poddy</span>
+          <span className="display" style={{ fontSize: '1.35rem' }}>Poddy</span>
         </div>
 
         <nav style={{ display: 'flex', gap: '0.5rem' }}>
@@ -221,12 +227,12 @@ function App() {
               onClick={() => { stopPolling(); setAppState(s); }}
               style={{
                 padding: '0.5rem 1.15rem', borderRadius: '50px',
-                background: primary ? 'var(--amber)' : (appState === s ? 'var(--bg-tertiary)' : 'transparent'),
-                color: primary ? 'black' : (appState === s ? 'var(--text-primary)' : 'var(--text-secondary)'),
-                fontWeight: primary ? 700 : 500,
+                background: primary ? 'var(--accent)' : (appState === s ? 'var(--bg-elevated)' : 'transparent'),
+                color: primary ? 'white' : (appState === s ? 'var(--text-primary)' : 'var(--text-secondary)'),
+                fontWeight: primary ? 600 : 500,
                 fontSize: '0.88rem',
                 border: primary ? 'none' : `1px solid ${appState === s ? 'var(--border-medium)' : 'transparent'}`,
-                transition: 'all 0.2s',
+                transition: `all var(--dur-fast) var(--ease-out)`,
                 fontFamily: 'var(--font-body)',
               }}
               onMouseOver={e => { if (!primary && appState !== s) e.currentTarget.style.color = 'var(--text-primary)'; }}
@@ -243,11 +249,11 @@ function App() {
         <div style={{
           width: '100%', maxWidth: '640px', marginBottom: '1.5rem',
           padding: '1.25rem 1.5rem', borderRadius: '16px',
-          background: 'var(--coral-glow)', border: '1px solid rgba(255,75,54,0.3)',
-          animation: 'fadeSlideUp 0.3s ease',
+          background: 'var(--error-subtle)', border: '1px solid var(--error-border)',
+          animation: 'fadeSlideUp var(--dur-slow) var(--ease-out)',
         }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.5rem' }}>
-            <h3 style={{ color: 'var(--coral)', fontSize: '0.95rem', fontWeight: 600 }}>{errorInfo.title}</h3>
+            <h3 style={{ color: 'var(--error)', fontSize: '0.95rem', fontWeight: 600 }}>{errorInfo.title}</h3>
             <button
               onClick={handleDismissError}
               style={{ background: 'transparent', color: 'var(--text-tertiary)', fontSize: '1.2rem', lineHeight: 1, cursor: 'pointer', padding: '0 0.25rem' }}
@@ -259,12 +265,12 @@ function App() {
               onClick={handleDismissError}
               style={{
                 marginTop: '0.85rem', padding: '0.5rem 1.2rem', borderRadius: '50px',
-                background: 'rgba(255,75,54,0.15)', border: '1px solid rgba(255,75,54,0.3)',
-                color: 'var(--coral)', fontWeight: 600, fontSize: '0.82rem', cursor: 'pointer',
-                fontFamily: 'var(--font-body)', transition: 'all 0.2s',
+                background: 'var(--error-subtle)', border: '1px solid var(--error-border)',
+                color: 'var(--error)', fontWeight: 600, fontSize: '0.82rem', cursor: 'pointer',
+                fontFamily: 'var(--font-body)', transition: `all var(--dur-fast) var(--ease-out)`,
               }}
-              onMouseOver={e => e.currentTarget.style.background = 'rgba(255,75,54,0.25)'}
-              onMouseOut={e => e.currentTarget.style.background = 'rgba(255,75,54,0.15)'}
+              onMouseOver={e => e.currentTarget.style.background = 'rgba(239,68,68,0.18)'}
+              onMouseOut={e => e.currentTarget.style.background = 'var(--error-subtle)'}
             >
               Try again
             </button>
@@ -278,6 +284,7 @@ function App() {
         {appState === 'loading' && (
           <CuratorLoadingState
             topic={topic}
+            title={title}
             status={loadingStatus}
             sourceNames={sourceNames}
             onCancel={handleCancel}
@@ -287,6 +294,7 @@ function App() {
         {appState === 'player'  && (
           <SynthPlayer
             topic={topic}
+            title={title}
             jobId={jobId}
             audioUrl={audioUrl}
             chapters={chapters}
@@ -305,7 +313,7 @@ function App() {
         )}
       </main>
 
-      <footer style={{ marginTop: '4rem', color: 'var(--text-muted)', fontSize: '0.78rem', letterSpacing: '0.04em' }}>
+      <footer style={{ marginTop: '4rem', color: 'var(--text-muted)', fontSize: '0.78rem', letterSpacing: '0.02em', fontFamily: 'var(--font-body)' }}>
         Poddy — assembling knowledge from the world's best conversations
       </footer>
     </div>

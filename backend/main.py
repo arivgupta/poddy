@@ -18,6 +18,7 @@ from services.ingestion import (
     process_sources_parallel,
 )
 from services.llm_curator import (
+    generate_title,
     curate_sources,
     extract_clips_from_source,
     order_and_deduplicate,
@@ -97,6 +98,15 @@ def run_pipeline(job_id: str, topic: str, depth: str):
         print(f"[{job_id}] {status}")
 
     try:
+        # ── Stage 0: Generate display title ───────────────────────────────────
+        try:
+            title = generate_title(topic)
+            jobs[job_id]["title"] = title
+            print(f"[{job_id}] title: {title}")
+        except Exception as e:
+            print(f"[{job_id}] title generation failed, using topic: {e}")
+            jobs[job_id]["title"] = topic
+
         # ── Stage 1: AI source discovery ──────────────────────────────────────
         update("discovering_sources")
         sources = curate_sources(topic, n_sources=n_sources)

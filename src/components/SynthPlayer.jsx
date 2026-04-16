@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Play, Pause, SkipBack, SkipForward, ChevronLeft, Download, ExternalLink, Sparkles, Radio } from 'lucide-react';
+import TopicArtwork from './TopicArtwork';
 
 const BACKEND = import.meta.env.VITE_BACKEND_URL || 'http://127.0.0.1:8000';
 const SPEEDS  = [0.75, 1, 1.25, 1.5, 2, 2.5, 3];
@@ -12,7 +13,7 @@ function formatTime(ms) {
   return `${m}:${s.toString().padStart(2, '0')}`;
 }
 
-export default function SynthPlayer({ topic, jobId, audioUrl, chapters, sourcesUsed, durationMs, onBack }) {
+export default function SynthPlayer({ topic, title, jobId, audioUrl, chapters, sourcesUsed, durationMs, onBack }) {
   const [isPlaying, setIsPlaying]           = useState(false);
   const [currentMs, setCurrentMs]           = useState(0);
   const [totalMs, setTotalMs]               = useState(durationMs || 0);
@@ -106,13 +107,13 @@ export default function SynthPlayer({ topic, jobId, audioUrl, chapters, sourcesU
   const progress = totalMs > 0 ? (currentMs / totalMs) * 100 : 0;
 
   return (
-    <div style={{ width: '100%', maxWidth: '820px', animation: 'fadeSlideUp 0.4s ease' }}>
+    <div style={{ width: '100%', maxWidth: '820px', animation: 'fadeSlideUp var(--dur-slow) var(--ease-out)' }}>
       {audioUrl && <audio ref={audioRef} src={audioUrl} preload="auto" />}
 
       {/* Back */}
       <button
         onClick={onBack}
-        style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', color: 'var(--text-secondary)', fontSize: '0.9rem', background: 'transparent', marginBottom: '1.5rem', cursor: 'pointer', transition: 'color 0.2s', fontFamily: 'var(--font-body)' }}
+        style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', color: 'var(--text-secondary)', fontSize: '0.9rem', background: 'transparent', marginBottom: '1.5rem', cursor: 'pointer', transition: `color var(--dur-fast) var(--ease-out)`, fontFamily: 'var(--font-body)' }}
         onMouseOver={e => e.currentTarget.style.color = 'var(--text-primary)'}
         onMouseOut={e => e.currentTarget.style.color = 'var(--text-secondary)'}
       >
@@ -124,26 +125,17 @@ export default function SynthPlayer({ topic, jobId, audioUrl, chapters, sourcesU
         {/* ── Header ─────────────────────────────────────────────────────── */}
         <div style={{ padding: '2rem 2.5rem', display: 'flex', gap: '2rem', alignItems: 'center', borderBottom: '1px solid var(--border-subtle)', flexWrap: 'wrap' }}>
           {/* Artwork */}
-          <div style={{ width: 120, height: 120, borderRadius: '16px', flexShrink: 0, position: 'relative', overflow: 'hidden', background: 'var(--bg-tertiary)', border: '1px solid var(--border-medium)' }}>
-            <div style={{ position: 'absolute', inset: 0, background: 'conic-gradient(var(--amber), var(--coral), var(--cyan), var(--amber))', animation: 'spin-slow 10s linear infinite', opacity: isPlaying ? 0.85 : 0.2, transition: 'opacity 1.5s' }} />
-            <div style={{ position: 'absolute', inset: '5px', backgroundColor: 'var(--bg-secondary)', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <span className="display" style={{ fontSize: '2.8rem', fontWeight: 900, fontStyle: 'italic', color: 'rgba(245,166,35,0.12)' }}>S</span>
-            </div>
-            {isPlaying && (
-              <div style={{ position: 'absolute', bottom: 8, left: '50%', transform: 'translateX(-50%)', display: 'flex', gap: 3, alignItems: 'flex-end' }}>
-                {[1,2,3,4,5].map(i => (
-                  <div key={i} style={{ width: 3, borderRadius: 2, background: 'var(--amber)', animation: `float ${0.4 + i * 0.15}s ease-in-out infinite alternate`, height: `${6 + i * 3}px` }} />
-                ))}
-              </div>
-            )}
-          </div>
+          <TopicArtwork topic={topic} title={title} size={120} isPlaying={isPlaying} />
 
           {/* Metadata */}
           <div style={{ flex: 1, minWidth: 200 }}>
-            <div style={{ display: 'inline-block', padding: '0.18rem 0.65rem', borderRadius: '50px', background: 'var(--amber-glow)', color: 'var(--amber)', fontSize: '0.72rem', fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: '0.6rem', border: '1px solid var(--amber-border)' }}>
+            <div style={{ display: 'inline-block', padding: '0.18rem 0.65rem', borderRadius: '50px', background: 'var(--accent-subtle)', color: 'var(--accent)', fontSize: '0.72rem', fontWeight: 500, letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: '0.6rem', border: '1px solid var(--accent-border)' }}>
               AI Curated Poddy
             </div>
-            <h2 className="display" style={{ fontSize: '1.55rem', fontWeight: 700, marginBottom: '0.35rem', lineHeight: 1.2 }}>{topic}</h2>
+            <h2 className="display" style={{ fontSize: '1.55rem', marginBottom: '0.25rem', lineHeight: 1.2 }}>{title || topic}</h2>
+            {title && title !== topic && (
+              <p style={{ color: 'var(--text-tertiary)', fontSize: '0.8rem', marginBottom: '0.4rem', fontStyle: 'italic' }}>{topic}</p>
+            )}
             <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', marginBottom: '0.85rem' }}>
               {sourcesUsed.length} sources · {formatTime(totalMs || durationMs)}
             </p>
@@ -154,9 +146,9 @@ export default function SynthPlayer({ topic, jobId, audioUrl, chapters, sourcesU
             </div>
             <button
               onClick={handleDownload}
-              style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.5rem 1.1rem', borderRadius: '50px', background: 'var(--amber-glow)', border: '1px solid var(--amber-border)', color: 'var(--amber)', fontWeight: 600, fontSize: '0.82rem', cursor: 'pointer', transition: 'all 0.2s', fontFamily: 'var(--font-body)' }}
-              onMouseOver={e => { e.currentTarget.style.background = 'rgba(245,166,35,0.25)'; e.currentTarget.style.boxShadow = '0 4px 16px rgba(245,166,35,0.2)'; }}
-              onMouseOut={e => { e.currentTarget.style.background = 'var(--amber-glow)'; e.currentTarget.style.boxShadow = 'none'; }}
+              style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.5rem 1.1rem', borderRadius: '50px', background: 'var(--accent-subtle)', border: '1px solid var(--accent-border)', color: 'var(--accent)', fontWeight: 600, fontSize: '0.82rem', cursor: 'pointer', transition: `all var(--dur-fast) var(--ease-out)`, fontFamily: 'var(--font-body)' }}
+              onMouseOver={e => { e.currentTarget.style.background = 'rgba(167,139,250,0.18)'; e.currentTarget.style.boxShadow = '0 4px 12px rgba(167,139,250,0.15)'; }}
+              onMouseOut={e => { e.currentTarget.style.background = 'var(--accent-subtle)'; e.currentTarget.style.boxShadow = 'none'; }}
             >
               <Download size={13} /> Download MP3
             </button>
@@ -164,15 +156,15 @@ export default function SynthPlayer({ topic, jobId, audioUrl, chapters, sourcesU
         </div>
 
         {/* ── Player ─────────────────────────────────────────────────────── */}
-        <div style={{ padding: '1.5rem 2.5rem', background: 'rgba(0,0,0,0.3)', borderBottom: '1px solid var(--border-subtle)' }}>
+        <div style={{ padding: '1.5rem 2.5rem', background: 'rgba(0,0,0,0.2)', borderBottom: '1px solid var(--border-subtle)' }}>
           {/* Progress bar */}
           <div
             ref={progressRef}
             onMouseDown={handleBarMouseDown}
-            style={{ width: '100%', height: 7, background: 'var(--bg-tertiary)', borderRadius: 4, cursor: 'pointer', marginBottom: '0.6rem', userSelect: 'none', position: 'relative' }}
+            style={{ width: '100%', height: 6, background: 'var(--bg-elevated)', borderRadius: 4, cursor: 'pointer', marginBottom: '0.6rem', userSelect: 'none', position: 'relative' }}
           >
-            <div style={{ width: `${progress}%`, height: '100%', background: 'linear-gradient(90deg, var(--amber), var(--coral))', borderRadius: 4, position: 'relative', transition: isDragging ? 'none' : 'width 0.2s linear', boxShadow: '0 0 10px rgba(245,166,35,0.4)' }}>
-              <div style={{ position: 'absolute', right: -6, top: -3.5, width: 14, height: 14, borderRadius: '50%', background: 'white', boxShadow: '0 0 0 3px rgba(245,166,35,0.5)', cursor: 'grab' }} />
+            <div style={{ width: `${progress}%`, height: '100%', background: 'var(--accent)', borderRadius: 4, position: 'relative', transition: isDragging ? 'none' : 'width 0.2s linear' }}>
+              <div style={{ position: 'absolute', right: -6, top: -3, width: 12, height: 12, borderRadius: '50%', background: 'white', boxShadow: '0 0 0 3px var(--accent-border)', cursor: 'grab' }} />
             </div>
           </div>
           <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-tertiary)', fontSize: '0.78rem', marginBottom: '1.25rem' }}>
@@ -182,20 +174,20 @@ export default function SynthPlayer({ topic, jobId, audioUrl, chapters, sourcesU
 
           {/* Controls */}
           <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '2.5rem', marginBottom: '1.25rem' }}>
-            <button onClick={() => skip(-15)} style={{ background: 'transparent', color: 'var(--text-secondary)', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.15rem', transition: 'color 0.18s' }} onMouseOver={e => e.currentTarget.style.color = 'var(--amber)'} onMouseOut={e => e.currentTarget.style.color = 'var(--text-secondary)'}>
+            <button onClick={() => skip(-15)} style={{ background: 'transparent', color: 'var(--text-secondary)', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.15rem', transition: `color var(--dur-fast) var(--ease-out)` }} onMouseOver={e => e.currentTarget.style.color = 'var(--accent)'} onMouseOut={e => e.currentTarget.style.color = 'var(--text-secondary)'}>
               <SkipBack size={22} /><span style={{ fontSize: '0.58rem' }}>15s</span>
             </button>
 
             <button
               onClick={togglePlay}
-              style={{ width: 62, height: 62, borderRadius: '50%', background: 'linear-gradient(135deg, var(--amber), var(--coral))', color: 'black', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', boxShadow: isPlaying ? '0 0 30px rgba(245,166,35,0.5)' : '0 6px 20px rgba(0,0,0,0.5)', transition: 'all 0.2s', flexShrink: 0 }}
-              onMouseOver={e => e.currentTarget.style.transform = 'scale(1.06)'}
+              style={{ width: 62, height: 62, borderRadius: '50%', background: 'var(--accent)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', boxShadow: isPlaying ? '0 0 24px rgba(167,139,250,0.35)' : '0 4px 16px rgba(0,0,0,0.4)', transition: `all var(--dur-fast) var(--ease-out)`, flexShrink: 0 }}
+              onMouseOver={e => e.currentTarget.style.transform = 'scale(1.04)'}
               onMouseOut={e => e.currentTarget.style.transform = 'scale(1)'}
             >
-              {isPlaying ? <Pause size={26} fill="black" /> : <Play size={26} fill="black" style={{ marginLeft: 3 }} />}
+              {isPlaying ? <Pause size={26} fill="white" /> : <Play size={26} fill="white" style={{ marginLeft: 3 }} />}
             </button>
 
-            <button onClick={() => skip(15)} style={{ background: 'transparent', color: 'var(--text-secondary)', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.15rem', transition: 'color 0.18s' }} onMouseOver={e => e.currentTarget.style.color = 'var(--amber)'} onMouseOut={e => e.currentTarget.style.color = 'var(--text-secondary)'}>
+            <button onClick={() => skip(15)} style={{ background: 'transparent', color: 'var(--text-secondary)', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.15rem', transition: `color var(--dur-fast) var(--ease-out)` }} onMouseOver={e => e.currentTarget.style.color = 'var(--accent)'} onMouseOut={e => e.currentTarget.style.color = 'var(--text-secondary)'}>
               <SkipForward size={22} /><span style={{ fontSize: '0.58rem' }}>15s</span>
             </button>
           </div>
@@ -203,7 +195,7 @@ export default function SynthPlayer({ topic, jobId, audioUrl, chapters, sourcesU
           {/* Speed */}
           <div style={{ display: 'flex', justifyContent: 'center', gap: '0.35rem', flexWrap: 'wrap' }}>
             {SPEEDS.map(s => (
-              <button key={s} onClick={() => setSpeed(s)} style={{ padding: '0.22rem 0.6rem', borderRadius: '50px', border: `1px solid ${speed === s ? 'var(--amber)' : 'var(--border-subtle)'}`, background: speed === s ? 'var(--amber-glow)' : 'transparent', color: speed === s ? 'var(--amber)' : 'var(--text-tertiary)', fontSize: '0.75rem', fontWeight: speed === s ? 600 : 400, cursor: 'pointer', transition: 'all 0.15s', fontFamily: 'var(--font-body)' }}>
+              <button key={s} onClick={() => setSpeed(s)} style={{ padding: '0.22rem 0.6rem', borderRadius: '50px', border: `1px solid ${speed === s ? 'var(--accent-border)' : 'var(--border-subtle)'}`, background: speed === s ? 'var(--accent-subtle)' : 'transparent', color: speed === s ? 'var(--accent)' : 'var(--text-tertiary)', fontSize: '0.75rem', fontWeight: speed === s ? 600 : 400, cursor: 'pointer', transition: `all var(--dur-fast) var(--ease-out)`, fontFamily: 'var(--font-body)' }}>
                 {s}×
               </button>
             ))}
@@ -212,7 +204,7 @@ export default function SynthPlayer({ topic, jobId, audioUrl, chapters, sourcesU
 
         {/* ── Chapters ────────────────────────────────────────────────────── */}
         <div style={{ padding: '1.5rem 2.5rem' }}>
-          <h3 style={{ fontSize: '0.72rem', color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '0.85rem', fontWeight: 600 }}>
+          <h3 style={{ fontSize: '0.72rem', color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '0.85rem', fontWeight: 500 }}>
             Chapters · {chapters.length}
           </h3>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
@@ -224,16 +216,16 @@ export default function SynthPlayer({ topic, jobId, audioUrl, chapters, sourcesU
                 <div
                   key={idx}
                   onClick={() => jumpToChapter(ch)}
-                  style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.8rem 1rem', borderRadius: '10px', background: isActive ? 'var(--amber-glow)' : 'var(--bg-secondary)', border: `1px solid ${isActive ? 'var(--amber-border)' : 'transparent'}`, cursor: 'pointer', transition: 'all 0.18s' }}
-                  onMouseOver={e => { if (!isActive) { e.currentTarget.style.background = 'var(--bg-tertiary)'; e.currentTarget.style.borderColor = 'var(--border-subtle)'; }}}
-                  onMouseOut={e => { if (!isActive) { e.currentTarget.style.background = 'var(--bg-secondary)'; e.currentTarget.style.borderColor = 'transparent'; }}}
+                  style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.8rem 1rem', borderRadius: '10px', background: isActive ? 'var(--accent-subtle)' : 'var(--bg-raised)', border: `1px solid ${isActive ? 'var(--accent-border)' : 'transparent'}`, cursor: 'pointer', transition: `all var(--dur-fast) var(--ease-out)` }}
+                  onMouseOver={e => { if (!isActive) { e.currentTarget.style.background = 'var(--bg-elevated)'; e.currentTarget.style.borderColor = 'var(--border-subtle)'; }}}
+                  onMouseOut={e => { if (!isActive) { e.currentTarget.style.background = 'var(--bg-raised)'; e.currentTarget.style.borderColor = 'transparent'; }}}
                 >
-                  <div style={{ width: 28, height: 28, borderRadius: '50%', flexShrink: 0, background: isClip ? 'var(--cyan-glow)' : 'var(--coral-glow)', border: `1px solid ${isClip ? 'rgba(0,212,255,0.3)' : 'rgba(255,75,54,0.3)'}`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    {isClip ? <Radio size={11} color="var(--cyan)" /> : <Sparkles size={11} color="var(--coral)" />}
+                  <div style={{ width: 28, height: 28, borderRadius: '50%', flexShrink: 0, background: isClip ? 'rgba(96,165,250,0.12)' : 'rgba(192,132,252,0.12)', border: `1px solid ${isClip ? 'rgba(96,165,250,0.25)' : 'rgba(192,132,252,0.25)'}`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    {isClip ? <Radio size={11} color="var(--clip-accent)" /> : <Sparkles size={11} color="var(--narration-accent)" />}
                   </div>
 
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontWeight: isActive ? 600 : 400, color: isActive ? 'var(--amber)' : 'var(--text-primary)', fontSize: '0.9rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    <div style={{ fontWeight: isActive ? 600 : 400, color: isActive ? 'var(--accent)' : 'var(--text-primary)', fontSize: '0.9rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                       {ch.title}
                     </div>
                     {isClip && ch.source_podcast && (
@@ -244,14 +236,14 @@ export default function SynthPlayer({ topic, jobId, audioUrl, chapters, sourcesU
                     )}
                   </div>
 
-                  <span style={{ color: isActive ? 'var(--amber)' : 'var(--text-tertiary)', fontSize: '0.78rem', fontVariantNumeric: 'tabular-nums', flexShrink: 0 }}>
+                  <span style={{ color: isActive ? 'var(--accent)' : 'var(--text-tertiary)', fontSize: '0.78rem', fontVariantNumeric: 'tabular-nums', flexShrink: 0 }}>
                     {formatTime(ch.start_ms)}
                   </span>
 
                   {isClip && ch.apple_podcasts_url && (
                     <a href={ch.apple_podcasts_url} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()} title="Open original episode"
-                      style={{ color: 'var(--text-muted)', flexShrink: 0, transition: 'color 0.18s' }}
-                      onMouseOver={e => e.currentTarget.style.color = 'var(--amber)'} onMouseOut={e => e.currentTarget.style.color = 'var(--text-muted)'}
+                      style={{ color: 'var(--text-muted)', flexShrink: 0, transition: `color var(--dur-fast) var(--ease-out)` }}
+                      onMouseOver={e => e.currentTarget.style.color = 'var(--accent)'} onMouseOut={e => e.currentTarget.style.color = 'var(--text-muted)'}
                     >
                       <ExternalLink size={12} />
                     </a>

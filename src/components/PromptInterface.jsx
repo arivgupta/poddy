@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Search, Sparkles, Headphones, Zap, BookOpen } from 'lucide-react';
+import { Search, Sparkles, Headphones, BookOpen } from 'lucide-react';
 
 const DEPTHS = [
   { label: 'Quick Brief',    value: 'quick',    sources: '2 sources', time: '~10 min' },
@@ -34,42 +34,18 @@ export default function PromptInterface({ onSynthesize }) {
       display: 'flex',
       flexDirection: 'column',
       alignItems: 'center',
-      animation: 'fadeSlideUp 0.5s ease',
+      animation: 'fadeSlideUp var(--dur-slow) var(--ease-out)',
       position: 'relative',
     }}>
 
-      {/* ── Background radial spotlight ──────────────────────────────────── */}
-      <div style={{
-        position: 'absolute',
-        top: '-60px',
-        left: '50%',
-        transform: 'translateX(-50%)',
-        width: '700px',
-        height: '400px',
-        background: 'radial-gradient(ellipse at center, rgba(245,166,35,0.07) 0%, transparent 70%)',
-        pointerEvents: 'none',
-        zIndex: 0,
-      }} />
-
-      {/* ── Everything stacks above the glow ─────────────────────────────── */}
       <div style={{ position: 'relative', zIndex: 1, width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
 
         {/* ── Hero text ────────────────────────────────────────────────────── */}
         <div style={{ textAlign: 'center', marginBottom: '2.5rem' }}>
-          <div style={{
-            display: 'inline-flex', alignItems: 'center', gap: '0.4rem',
-            padding: '0.3rem 0.8rem', borderRadius: '50px',
-            background: 'var(--amber-glow)', border: '1px solid var(--amber-border)',
-            color: 'var(--amber)', fontSize: '0.72rem', fontWeight: 600,
-            letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: '1.75rem',
-          }}>
-            <Zap size={10} /> AI Podcast Curator
-          </div>
-
           <h1 className="display" style={{
-            fontSize: 'clamp(2.6rem, 6vw, 4rem)',
+            fontSize: 'clamp(2.4rem, 5vw, 3.5rem)',
             fontWeight: 700, lineHeight: 1.1,
-            marginBottom: '1.25rem', letterSpacing: '-0.025em',
+            marginBottom: '1.25rem',
           }}>
             What do you want to<br />
             <span className="text-gradient">deeply understand</span>?
@@ -78,6 +54,7 @@ export default function PromptInterface({ onSynthesize }) {
           <p style={{
             color: 'var(--text-secondary)', fontSize: '1rem',
             maxWidth: '440px', lineHeight: 1.7, margin: '0 auto',
+            fontWeight: 400,
           }}>
             AI finds the best moments from the world's top podcasts and assembles a curated audio documentary — just for you.
           </p>
@@ -90,13 +67,11 @@ export default function PromptInterface({ onSynthesize }) {
           style={{
             width: '100%', maxWidth: '640px',
             padding: 0, overflow: 'hidden',
-            border: isFocused ? '1px solid var(--amber-border)' : 'var(--glass-border)',
+            border: isFocused ? '1px solid var(--accent-border)' : '1px solid var(--border-subtle)',
             boxShadow: isFocused
-              ? '0 0 0 4px rgba(245,166,35,0.06), 0 20px 60px rgba(0,0,0,0.5)'
-              : '0 20px 60px rgba(0,0,0,0.4)',
-            transition: 'all 0.3s ease',
-            /* Top highlight stripe */
-            borderTop: isFocused ? '1px solid rgba(245,166,35,0.5)' : '1px solid rgba(255,255,255,0.07)',
+              ? '0 0 0 3px var(--accent-subtle), 0 16px 48px rgba(0,0,0,0.4)'
+              : '0 16px 48px rgba(0,0,0,0.3)',
+            transition: `all var(--dur-std) var(--ease-out)`,
           }}
         >
           {/* Search input */}
@@ -107,12 +82,12 @@ export default function PromptInterface({ onSynthesize }) {
           }}>
             <Search
               size={18}
-              color={isFocused ? 'var(--amber)' : 'var(--text-tertiary)'}
-              style={{ flexShrink: 0, transition: 'color 0.25s' }}
+              color={isFocused ? 'var(--accent)' : 'var(--text-tertiary)'}
+              style={{ flexShrink: 0, transition: `color var(--dur-fast) var(--ease-out)` }}
             />
             <input
               type="text"
-              placeholder="e.g. The neuroscience of motivation"
+              placeholder="What do you want to learn about?"
               value={query}
               onChange={e => setQuery(e.target.value)}
               onFocus={() => setIsFocused(true)}
@@ -133,7 +108,7 @@ export default function PromptInterface({ onSynthesize }) {
             <p style={{
               color: 'var(--text-tertiary)', fontSize: '0.7rem',
               textTransform: 'uppercase', letterSpacing: '0.12em',
-              marginBottom: '0.85rem', fontWeight: 600, textAlign: 'center',
+              marginBottom: '0.85rem', fontWeight: 500, textAlign: 'center',
             }}>
               How deep do you want to go?
             </p>
@@ -149,39 +124,30 @@ export default function PromptInterface({ onSynthesize }) {
                       flex: 1, maxWidth: '170px',
                       padding: '0.65rem 0.5rem',
                       borderRadius: '12px',
-                      border: `1.5px solid ${active ? 'var(--amber)' : 'var(--border-subtle)'}`,
-                      background: active ? 'var(--amber-glow)' : 'var(--bg-secondary)',
-                      color: active ? 'var(--amber)' : 'var(--text-secondary)',
+                      border: `1.5px solid ${active ? 'var(--accent-border)' : 'var(--border-subtle)'}`,
+                      background: active ? 'var(--accent-subtle)' : 'var(--bg-raised)',
+                      color: active ? 'var(--accent)' : 'var(--text-secondary)',
                       display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.2rem',
-                      transition: 'all 0.2s',
+                      transition: `all var(--dur-fast) var(--ease-out)`,
                       fontFamily: 'var(--font-body)',
                       cursor: 'pointer',
-                      position: 'relative',
                     }}
                     onMouseOver={e => {
                       if (!active) {
                         e.currentTarget.style.borderColor = 'var(--border-medium)';
                         e.currentTarget.style.color = 'var(--text-primary)';
-                        e.currentTarget.style.background = 'var(--bg-tertiary)';
+                        e.currentTarget.style.background = 'var(--bg-elevated)';
                       }
                     }}
                     onMouseOut={e => {
                       if (!active) {
                         e.currentTarget.style.borderColor = 'var(--border-subtle)';
                         e.currentTarget.style.color = 'var(--text-secondary)';
-                        e.currentTarget.style.background = 'var(--bg-secondary)';
+                        e.currentTarget.style.background = 'var(--bg-raised)';
                       }
                     }}
                   >
-                    {active && (
-                      <div style={{
-                        position: 'absolute', top: 6, right: 8,
-                        width: 6, height: 6, borderRadius: '50%',
-                        background: 'var(--amber)',
-                        boxShadow: '0 0 6px var(--amber)',
-                      }} />
-                    )}
-                    <span style={{ fontWeight: 700, fontSize: '0.88rem' }}>{d.label}</span>
+                    <span style={{ fontWeight: 600, fontSize: '0.88rem' }}>{d.label}</span>
                     <span style={{ fontSize: '0.7rem', opacity: 0.65 }}>{d.sources} · {d.time}</span>
                   </button>
                 );
@@ -195,35 +161,32 @@ export default function PromptInterface({ onSynthesize }) {
               type="submit"
               style={{
                 width: '100%',
-                background: hasText
-                  ? 'linear-gradient(120deg, var(--amber) 0%, var(--coral) 50%, var(--amber) 100%)'
-                  : 'var(--bg-elevated)',
-                backgroundSize: hasText ? '300% 100%' : '100% 100%',
-                color: hasText ? 'black' : 'var(--text-muted)',
+                background: hasText ? 'var(--accent)' : 'var(--bg-elevated)',
+                color: hasText ? 'white' : 'var(--text-muted)',
                 padding: '0.95rem',
                 borderRadius: '10px',
-                fontWeight: 700, fontSize: '0.95rem',
+                fontWeight: 600, fontSize: '0.95rem',
                 display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem',
-                boxShadow: hasText ? '0 4px 24px rgba(245,166,35,0.25)' : 'none',
-                transition: 'box-shadow 0.3s, color 0.3s',
+                boxShadow: hasText ? '0 4px 16px rgba(167,139,250,0.20)' : 'none',
+                transition: `all var(--dur-std) var(--ease-out)`,
                 fontFamily: 'var(--font-body)',
                 cursor: hasText ? 'pointer' : 'default',
-                animation: hasText ? 'shimmer 2.5s ease-in-out infinite' : 'none',
+                opacity: 1,
               }}
-              onMouseOver={e => { if (hasText) e.currentTarget.style.opacity = '0.9'; }}
+              onMouseOver={e => { if (hasText) e.currentTarget.style.opacity = '0.88'; }}
               onMouseOut={e => { if (hasText) e.currentTarget.style.opacity = '1'; }}
             >
               <Sparkles size={16} />
-              {depth === 'deep' ? 'Generate Full Deep Dive' : depth === 'quick' ? 'Generate Quick Brief' : 'Generate Poddy'}
+              Generate
             </button>
           </div>
 
-          {/* Feature strip inside the card */}
+          {/* Feature strip */}
           <div style={{
             display: 'flex', justifyContent: 'center', gap: '2rem',
             padding: '0.85rem 1.5rem',
             borderTop: '1px solid var(--border-subtle)',
-            background: 'rgba(0,0,0,0.15)',
+            background: 'rgba(0,0,0,0.12)',
           }}>
             {[
               { icon: Headphones, label: 'Real Podcasts' },
@@ -234,7 +197,7 @@ export default function PromptInterface({ onSynthesize }) {
                 display: 'flex', alignItems: 'center', gap: '0.4rem',
                 color: 'var(--text-tertiary)', fontSize: '0.75rem',
               }}>
-                <Icon size={12} color="var(--amber)" /> {label}
+                <Icon size={12} color="var(--accent)" /> {label}
               </div>
             ))}
           </div>
@@ -256,19 +219,19 @@ export default function PromptInterface({ onSynthesize }) {
               onClick={() => setQuery(s)}
               style={{
                 padding: '0.38rem 0.85rem', borderRadius: '50px',
-                background: 'var(--bg-secondary)', border: '1px solid var(--border-subtle)',
+                background: 'var(--bg-raised)', border: '1px solid var(--border-subtle)',
                 color: 'var(--text-secondary)', fontSize: '0.82rem',
-                transition: 'all 0.18s', fontFamily: 'var(--font-body)', cursor: 'pointer',
+                transition: `all var(--dur-fast) var(--ease-out)`, fontFamily: 'var(--font-body)', cursor: 'pointer',
               }}
               onMouseOver={e => {
-                e.currentTarget.style.borderColor = 'var(--amber-border)';
-                e.currentTarget.style.color = 'var(--amber)';
-                e.currentTarget.style.background = 'var(--amber-glow)';
+                e.currentTarget.style.borderColor = 'var(--accent-border)';
+                e.currentTarget.style.color = 'var(--accent)';
+                e.currentTarget.style.background = 'var(--accent-hover)';
               }}
               onMouseOut={e => {
                 e.currentTarget.style.borderColor = 'var(--border-subtle)';
                 e.currentTarget.style.color = 'var(--text-secondary)';
-                e.currentTarget.style.background = 'var(--bg-secondary)';
+                e.currentTarget.style.background = 'var(--bg-raised)';
               }}
             >
               {s}

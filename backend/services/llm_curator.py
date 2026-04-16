@@ -23,6 +23,38 @@ def _parse_json(text: str) -> Any:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Title generation (fast, cheap, runs first)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def generate_title(topic: str) -> str:
+    """Turn a natural-language prompt into a clean 3-6 word display title."""
+    client = _client()
+    resp = client.chat.completions.create(
+        model="gpt-4o-mini",
+        temperature=0.4,
+        max_tokens=30,
+        messages=[
+            {
+                "role": "system",
+                "content": (
+                    "You are a title generator. Given a user's topic or question, produce a clean, "
+                    "concise title of 3-6 words. No quotes, no punctuation except colons if needed. "
+                    "The title should sound like a podcast episode or documentary title.\n\n"
+                    "Examples:\n"
+                    '  "can you teach me about how sleep works" -> The Science of Sleep\n'
+                    '  "I want to understand discipline and building habits" -> Building Unbreakable Discipline\n'
+                    '  "what is quantum computing and why does it matter" -> Quantum Computing Explained\n'
+                    '  "the neuroscience of motivation" -> The Neuroscience of Motivation\n'
+                ),
+            },
+            {"role": "user", "content": topic},
+        ],
+    )
+    title = resp.choices[0].message.content.strip().strip('"').strip("'")
+    return title
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Stage 1 — Expert source discovery
 # ─────────────────────────────────────────────────────────────────────────────
 
