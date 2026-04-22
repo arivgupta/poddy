@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Play, Pause, SkipBack, SkipForward, ChevronLeft, Download, ExternalLink, Sparkles, Radio } from 'lucide-react';
 import TopicArtwork from './TopicArtwork';
+import RetroRadioTicker from './RetroRadioTicker';
 
 const BACKEND = import.meta.env.VITE_BACKEND_URL || 'http://127.0.0.1:8000';
 const SPEEDS  = [0.75, 1, 1.25, 1.5, 2, 2.5, 3];
@@ -168,6 +169,8 @@ export default function SynthPlayer({ topic, title, jobId, audioUrl, chapters, s
             <span>{formatTime(currentMs)}</span>
             <span>{formatTime(totalMs || durationMs)}</span>
           </div>
+
+          <RetroRadioTicker title={title || topic} />
 
           {/* Controls */}
           <div className="flex justify-center items-center gap-10 mb-5">

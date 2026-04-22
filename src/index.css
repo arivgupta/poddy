@@ -57,6 +57,25 @@
   50%      { opacity: 0.20; transform: scale(1.04); }
 }
 
+/* Retro radio LED marquee */
+@keyframes radio-marquee {
+  from { transform: translateX(0); }
+  to   { transform: translateX(-50%); }
+}
+
+.radio-marquee-track {
+  display: flex;
+  width: max-content;
+  animation: radio-marquee linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .radio-marquee-track {
+    animation: none;
+    transform: none;
+  }
+}
+
 /* ── Base ─────────────────────────────────────── */
 body {
   font-family: var(--font-body);
