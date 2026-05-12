@@ -7,6 +7,8 @@ import urllib.parse
 import xml.etree.ElementTree as ET
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
+from services import transcript_cache
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 1. PODCAST SEARCH  (iTunes Search API — completely free, no auth)
@@ -61,6 +63,7 @@ def get_best_episode(feed_url: str, topic_hint: str = "", episode_title_hint: st
         title_el = item.find("title")
         enclosure_el = item.find("enclosure")
         link_el = item.find("link")
+        guid_el = item.find("guid")
 
         if enclosure_el is None:
             continue
@@ -70,7 +73,13 @@ def get_best_episode(feed_url: str, topic_hint: str = "", episode_title_hint: st
 
         title = title_el.text.strip() if title_el is not None and title_el.text else ""
         ep_link = link_el.text.strip() if link_el is not None and link_el.text else channel_link
-        episodes.append({"title": title, "mp3_url": mp3_url, "apple_podcasts_url": ep_link})
+        guid = guid_el.text.strip() if guid_el is not None and guid_el.text else ""
+        episodes.append({
+            "title": title,
+            "mp3_url": mp3_url,
+            "apple_podcasts_url": ep_link,
+            "guid": guid,
+        })
 
     if not episodes:
         raise ValueError(f"No audio episodes found in feed: {feed_url}")
@@ -239,6 +248,22 @@ def process_source(source: dict, job_dir: str, user_topic: str = "") -> Optional
         episode = get_best_episode(podcast["feed_url"], topic_hint=topic_hint, episode_title_hint=episode_hint)
         print(f"[{podcast_name}] Episode: {episode['title']}")
 
+        # ── Cache lookup ──────────────────────────────────────────────────────
+        # Keyed on RSS GUID (canonical) with mp3_url as fallback. A hit skips
+        # download + trim + Whisper for this episode entirely.
+        cache_key = transcript_cache.make_key(episode.get("guid"), episode["mp3_url"])
+        cached = transcript_cache.lookup(cache_key)
+        if cached is not None:
+            print(f"[{podcast_name}] Cache HIT for {episode['title']} — skipping download + Whisper")
+            return {
+                **source,
+                "transcript":              cached["transcript"],
+                "audio_path":              cached["audio_path"],
+                "resolved_episode_title":  episode["title"],
+                "apple_podcasts_url":      episode.get("apple_podcasts_url", podcast.get("apple_podcasts_url", "")),
+            }
+
+        print(f"[{podcast_name}] Cache MISS — downloading + transcribing")
         safe_name = re.sub(r"[^a-zA-Z0-9]", "_", podcast_name)[:30]
         raw_path  = os.path.join(job_dir, f"{safe_name}_raw.mp3")
         trim_path = raw_path.replace(".mp3", "_trim.mp3")  # Huberman_Lab_raw_trim.mp3
@@ -250,10 +275,21 @@ def process_source(source: dict, job_dir: str, user_topic: str = "") -> Optional
             os.remove(raw_path)
         transcript = transcribe_audio(trim_path)
 
+        # Persist for next time. The cache returns a stable path we can use
+        # as audio_path downstream, so the job_dir copy can be evicted freely.
+        cached_audio_path = transcript_cache.store(
+            cache_key,
+            transcript=transcript,
+            trimmed_mp3_path=trim_path,
+            guid=episode.get("guid"),
+            mp3_url=episode["mp3_url"],
+            episode_title=episode["title"],
+        )
+
         return {
             **source,
             "transcript":              transcript,
-            "audio_path":              trim_path,
+            "audio_path":              cached_audio_path,
             "resolved_episode_title":  episode["title"],
             "apple_podcasts_url":      episode.get("apple_podcasts_url", podcast.get("apple_podcasts_url", "")),
         }
