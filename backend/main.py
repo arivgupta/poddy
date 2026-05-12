@@ -32,11 +32,25 @@ from services.audio_engine import stitch_multi_source
 
 app = FastAPI(title="Poddy Backend")
 
+# Comma-separated list of exact origins (production Vercel domain, custom domain, etc.)
+_extra_origins = [o.strip() for o in os.environ.get("ALLOWED_ORIGINS", "").split(",") if o.strip()]
+
+ALLOWED_ORIGINS = [
+    "https://poddy-one.vercel.app",
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    *_extra_origins,
+]
+
+# Vercel preview deploys: https://poddy-<hash>-<scope>.vercel.app
+ALLOWED_ORIGIN_REGEX = r"^https://poddy(-[a-z0-9]+)*\.vercel\.app$"
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],   # Open for now — lock down to your Vercel domain in production
+    allow_origins=ALLOWED_ORIGINS,
+    allow_origin_regex=ALLOWED_ORIGIN_REGEX,
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["*"],
 )
 
