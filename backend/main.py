@@ -6,10 +6,12 @@ import subprocess
 os.environ["PATH"] = "/opt/homebrew/bin:/usr/bin:/usr/local/bin:" + os.environ.get("PATH", "")
 
 import json
+import shutil
 import uuid
 import threading
+from collections import OrderedDict
 
-from fastapi import FastAPI, HTTPException, BackgroundTasks
+from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -58,7 +60,30 @@ JOBS_DIR = os.environ.get("JOBS_DIR", "/tmp/poddy_jobs")
 os.makedirs(JOBS_DIR, exist_ok=True)
 
 # In-memory job state { job_id: { status, chapters, error, duration_ms, ... } }
-jobs: Dict[str, Any] = {}
+# Bounded so a long-lived worker can't leak forever on a 512 MB box.
+MAX_JOBS_IN_MEMORY = int(os.environ.get("MAX_JOBS_IN_MEMORY", "64"))
+jobs: "OrderedDict[str, Any]" = OrderedDict()
+_jobs_lock = threading.Lock()
+
+
+def _evict_old_jobs() -> None:
+    """Evict oldest finished jobs and clean up their on-disk artifacts."""
+    while len(jobs) > MAX_JOBS_IN_MEMORY:
+        oldest_id, oldest = next(iter(jobs.items()))
+        # Don't evict a job that's still running — pop something newer instead.
+        if oldest.get("status") not in {"done", "error"}:
+            # Find the oldest finished job; if none, give up (let it grow a bit).
+            finished = next(
+                (jid for jid, j in jobs.items() if j.get("status") in {"done", "error"}),
+                None,
+            )
+            if finished is None:
+                return
+            oldest_id = finished
+        jobs.pop(oldest_id, None)
+        job_dir = os.path.join(JOBS_DIR, oldest_id)
+        if os.path.isdir(job_dir):
+            shutil.rmtree(job_dir, ignore_errors=True)
 
 
 @app.get("/health")
@@ -108,18 +133,21 @@ def run_pipeline(job_id: str, topic: str, depth: str):
     n_clips   = cfg["n_clips"]
 
     def update(status: str, **kwargs):
-        jobs[job_id].update({"status": status, **kwargs})
+        with _jobs_lock:
+            jobs[job_id].update({"status": status, **kwargs})
         print(f"[{job_id}] {status}")
 
     try:
         # ── Stage 0: Generate display title ───────────────────────────────────
         try:
             title = generate_title(topic)
-            jobs[job_id]["title"] = title
+            with _jobs_lock:
+                jobs[job_id]["title"] = title
             print(f"[{job_id}] title: {title}")
         except Exception as e:
             print(f"[{job_id}] title generation failed, using topic: {e}")
-            jobs[job_id]["title"] = topic
+            with _jobs_lock:
+                jobs[job_id]["title"] = topic
 
         # ── Stage 1: AI source discovery ──────────────────────────────────────
         update("discovering_sources")
@@ -174,8 +202,9 @@ def run_pipeline(job_id: str, topic: str, depth: str):
     except Exception as e:
         import traceback
         traceback.print_exc()
-        jobs[job_id]["status"] = "error"
-        jobs[job_id]["error"] = str(e)
+        with _jobs_lock:
+            jobs[job_id]["status"] = "error"
+            jobs[job_id]["error"] = str(e)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -183,13 +212,15 @@ def run_pipeline(job_id: str, topic: str, depth: str):
 # ─────────────────────────────────────────────────────────────────────────────
 
 @app.post("/synthesize")
-def synthesize(request: SynthesizeRequest, background_tasks: BackgroundTasks):
+def synthesize(request: SynthesizeRequest):
     """
     Kick off a synthesis job. Returns a job_id immediately.
     Poll /jobs/{job_id} for status. Fetch /audio/{job_id} when done.
     """
     job_id = str(uuid.uuid4())[:8]
-    jobs[job_id] = {"status": "queued", "topic": request.topic}
+    with _jobs_lock:
+        jobs[job_id] = {"status": "queued", "topic": request.topic}
+        _evict_old_jobs()
 
     t = threading.Thread(target=run_pipeline, args=(job_id, request.topic, request.depth), daemon=True)
     t.start()
@@ -200,12 +231,12 @@ def synthesize(request: SynthesizeRequest, background_tasks: BackgroundTasks):
 @app.get("/jobs/{job_id}")
 def get_job(job_id: str):
     """Poll job status. Returns full metadata including chapters when done."""
-    job = jobs.get(job_id)
-    if not job:
-        raise HTTPException(status_code=404, detail="Job not found")
-
-    # Don't expose the local output_path to the frontend
-    safe_job = {k: v for k, v in job.items() if k != "output_path"}
+    with _jobs_lock:
+        job = jobs.get(job_id)
+        if not job:
+            raise HTTPException(status_code=404, detail="Job not found")
+        # Snapshot under lock so we don't race a concurrent .update()
+        safe_job = {k: v for k, v in job.items() if k != "output_path"}
     return safe_job
 
 
