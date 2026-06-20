@@ -91,6 +91,8 @@ def stitch_multi_source(
                 "source_podcast": None,
                 "source_episode": None,
                 "apple_podcasts_url": None,
+                # Narration script — surfaced in the client "Show Notes" view.
+                "text": text,
             })
 
         elif seg_type == "clip":
@@ -129,6 +131,11 @@ def stitch_multi_source(
                 "source_podcast": segment.get("podcast_name", ""),
                 "source_episode": segment.get("episode_title", ""),
                 "apple_podcasts_url": segment.get("apple_podcasts_url", ""),
+                # One-sentence "what you'll learn" — surfaced in Show Notes.
+                "summary": segment.get("summary", ""),
+                # Original in-episode offsets, useful for deep links / citations.
+                "source_start_s": round(segment.get("start_time", 0), 1),
+                "source_end_s": round(segment.get("end_time", 0), 1),
             })
 
             # Clean up extracted clip file to save disk
