@@ -43,6 +43,11 @@ topic ──▶ curate sources (GPT) ──▶ find + download episodes (iTunes/
 
 ## Player features
 
+- **Continuous playback** — a single audio engine (`PlayerProvider`) keeps a
+  cast playing while you browse the Library or prompt screen, surfaced as a
+  **persistent mini-player** you can expand back to the full view.
+- **Autoplay queue** — when a cast ends, Poddy rolls into the next one in your
+  library (toggleable), with an "Up next" hint.
 - **OS / lock-screen controls** via the Media Session API (play/pause, skip,
   chapter prev/next, scrubbing) with generated cover art.
 - **Keyboard shortcuts** — `Space`/`K` play·pause, `J`/`L` (`←`/`→`) skip,
