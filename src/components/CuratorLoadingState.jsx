@@ -22,7 +22,7 @@ const ETA_RANGES = {
 
 export default function CuratorLoadingState({ topic, title, status, sourceNames, onCancel, depth }) {
   const [dots, setDots] = useState('');
-  const startRef = useRef(Date.now());
+  const startRef = useRef(null);
   const [elapsed, setElapsed] = useState(0);
 
   useEffect(() => {
