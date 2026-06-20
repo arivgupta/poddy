@@ -100,6 +100,38 @@ body::after {
 
 button { cursor: pointer; }
 
+/* ── Volume slider ────────────────────────────── */
+.poddy-range {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--color-cream-300);
+  cursor: pointer;
+  outline: none;
+}
+.poddy-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  background: var(--color-terra);
+  border: 2px solid var(--color-cream-50);
+  box-shadow: 0 1px 3px rgba(30, 24, 20, 0.25);
+}
+.poddy-range::-moz-range-thumb {
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  background: var(--color-terra);
+  border: 2px solid var(--color-cream-50);
+  box-shadow: 0 1px 3px rgba(30, 24, 20, 0.25);
+}
+.poddy-range:focus-visible {
+  box-shadow: 0 0 0 3px rgba(191, 86, 48, 0.25);
+}
+
 ::selection {
   background: rgba(191, 86, 48, 0.18);
   color: var(--color-ink-900);

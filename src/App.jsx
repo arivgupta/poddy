@@ -4,6 +4,7 @@ import CuratorLoadingState from './components/CuratorLoadingState';
 import SynthPlayer from './components/SynthPlayer';
 import Library from './components/Library';
 import { saveAudioBlob, loadAudioBlob, deleteAudioBlob } from './lib/audioStore';
+import { clearProgress } from './lib/playbackProgress';
 
 const BACKEND = import.meta.env.VITE_BACKEND_URL || 'http://127.0.0.1:8000';
 const LIBRARY_KEY = 'poddy_library';
@@ -14,7 +15,7 @@ function loadLibrary() {
 }
 function saveLibraryToStorage(entries) {
   try { localStorage.setItem(LIBRARY_KEY, JSON.stringify(entries)); }
-  catch {}
+  catch { /* storage full or unavailable */ }
 }
 
 function App() {
@@ -53,7 +54,8 @@ function App() {
       saveLibraryToStorage(updated);
       return updated;
     });
-    try { await deleteAudioBlob(id); } catch {}
+    clearProgress(id);
+    try { await deleteAudioBlob(id); } catch { /* blob may not exist */ }
   }, []);
 
   const stopPolling = useCallback(() => {
@@ -169,7 +171,7 @@ function App() {
         setAppState('player');
         return;
       }
-    } catch {}
+    } catch { /* fall through to server fetch */ }
 
     const serverUrl = `${BACKEND}/audio/${entry.jobId}`;
     try {
@@ -179,7 +181,7 @@ function App() {
         setAppState('player');
         return;
       }
-    } catch {}
+    } catch { /* server unreachable or audio gone */ }
 
     setErrorInfo({
       title: 'Audio unavailable',
