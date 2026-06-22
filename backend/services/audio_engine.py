@@ -1,5 +1,7 @@
 from typing import List, Dict, Optional, Any, Tuple
 import os
+import re
+import json
 import shutil
 import subprocess
 import asyncio
@@ -76,6 +78,56 @@ def generate_tts_batch(items: List[dict], voice: str = TTS_VOICE) -> None:
                 generate_tts(it["text"], it["path"])
             except Exception as e2:
                 print(f"  TTS failed for segment → {it['path']}: {e2}")
+
+
+def _measure_loudnorm(in_path: str) -> Optional[dict]:
+    """First loudnorm pass: measure a file's loudness stats (printed as JSON)."""
+    try:
+        res = subprocess.run(
+            ["ffmpeg", "-hide_banner", "-nostats", "-i", in_path,
+             "-af", f"{_loudnorm_filter()}:print_format=json", "-f", "null", "-"],
+            capture_output=True, text=True, check=True,
+        )
+    except subprocess.CalledProcessError as e:
+        print(f"  loudnorm measure failed for {os.path.basename(in_path)}: {e}")
+        return None
+    m = re.search(r"\{[^{}]*input_i[^{}]*\}", res.stderr, re.S)
+    if not m:
+        return None
+    try:
+        return json.loads(m.group(0))
+    except json.JSONDecodeError:
+        return None
+
+
+def master_final(in_path: str, out_path: str, bitrate: str = "192k") -> bool:
+    """
+    Master the assembled mix to exactly the loudness target using TWO-PASS
+    loudnorm (measure → apply with linear gain). Single-pass loudnorm is an
+    adaptive normalizer that typically undershoots the target by 1–2 LU; the
+    second pass uses the measured stats to hit -16 LUFS / -1.5 dBTP precisely.
+    Falls back to a single-pass master if measurement fails.
+    """
+    stats = _measure_loudnorm(in_path)
+    if stats:
+        measured = (
+            f"{_loudnorm_filter()}:linear=true"
+            f":measured_I={stats.get('input_i')}"
+            f":measured_TP={stats.get('input_tp')}"
+            f":measured_LRA={stats.get('input_lra')}"
+            f":measured_thresh={stats.get('input_thresh')}"
+            f":offset={stats.get('target_offset')}"
+        )
+        try:
+            subprocess.run(
+                ["ffmpeg", "-y", "-i", in_path, "-af", measured,
+                 "-ar", "44100", "-ac", "1", "-ab", bitrate, out_path],
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True,
+            )
+            return os.path.exists(out_path)
+        except subprocess.CalledProcessError as e:
+            print(f"  two-pass master failed ({e}); falling back to single-pass")
+    return _normalize_file(in_path, out_path, bitrate=bitrate)
 
 
 def _normalize_file(in_path: str, out_path: str, bitrate: str = "128k") -> bool:
@@ -256,6 +308,17 @@ def stitch_multi_source(plan: List[dict], tts_dir: str) -> Tuple[str, List[dict]
             except OSError: pass
 
     output_path = os.path.join(tts_dir, "final_poddy.mp3")
+    premaster_path = os.path.join(tts_dir, "final_poddy_premaster.mp3")
     print(f"Exporting final audio ({current_ms/1000:.1f}s) → {output_path}")
-    final_audio.export(output_path, format="mp3", bitrate="192k")
+    final_audio.export(premaster_path, format="mp3", bitrate="192k")
+
+    # Two-pass master so the whole piece lands exactly on the loudness target
+    # (per-segment normalization keeps segments consistent; this locks the
+    # overall integrated loudness + true-peak ceiling).
+    if master_final(premaster_path, output_path, bitrate="192k"):
+        try: os.remove(premaster_path)
+        except OSError: pass
+    else:
+        print("  Final master failed; using un-mastered mix")
+        os.replace(premaster_path, output_path)
     return output_path, chapters
