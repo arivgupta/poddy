@@ -97,6 +97,17 @@ uvicorn main:app --reload --port 8000
 
 `ffmpeg` must be installed and on your `PATH`.
 
+#### Validate the whole pipeline in one command
+
+```bash
+python backend/scripts/smoke_pipeline.py --topic "the science of deep sleep" --depth quick
+```
+
+Runs every stage end-to-end (no server needed), prints per-stage timings, and
+reports the final MP3's duration + integrated loudness. It preflights for
+`OPENAI_API_KEY` and podcast-CDN egress and fails fast with guidance if either
+is missing.
+
 #### Backend environment variables
 
 | Variable                | Default                          | Purpose                                            |
