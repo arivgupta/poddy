@@ -1,0 +1,22 @@
+# Poddy Video-Learning POC — EXPERIMENTAL.
+# This is SEPARATE from backend/requirements.txt (do not merge without review).
+#
+# The POC's default DRY-RUN mode needs NONE of these (it prints a plan only).
+# Install these to enable the gated LIVE features (--execute / --allow-network /
+# --use-llm). System binaries ffmpeg + ffprobe must also be on PATH.
+
+# Source discovery + media/caption download (the gated --allow-network path).
+yt-dlp==2026.6.9
+
+# Narration TTS for the no-avatar slate renderer (same voice as the audio app).
+edge-tts==7.2.8
+
+# LLM segment selection + teacher-script generation (the --use-llm path).
+openai==2.31.0
+
+# --- NOT pip-installable here; documented for completeness ---
+# ffmpeg / ffprobe : system packages (apt-get install ffmpeg). Required for all
+#                    cutting / normalizing / concat / loudness work.
+# SadTalker        : separate GPU repo + checkpoints (~2GB) for --avatar sadtalker.
+#                    https://github.com/OpenTalker/SadTalker  (Apache-2.0)
+# D-ID API key     : env DID_API_KEY for the hosted --avatar did path.
