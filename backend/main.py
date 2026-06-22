@@ -96,11 +96,14 @@ def health_check():
 # Request schema
 # ─────────────────────────────────────────────────────────────────────────────
 
-# Depth → (n_sources, n_clips_per_source)
+# Depth → tuning knobs.
+#   n_sources : distinct podcasts we want in the final piece
+#   n_clips   : clips extracted per source
+#   window    : minutes of each episode transcribed (deeper = look further in)
 DEPTH_CONFIG = {
-    "quick":    {"n_sources": 2, "n_clips": 4},
-    "standard": {"n_sources": 3, "n_clips": 6},
-    "deep":     {"n_sources": 5, "n_clips": 8},
+    "quick":    {"n_sources": 2, "n_clips": 4, "window": 35},
+    "standard": {"n_sources": 3, "n_clips": 6, "window": 45},
+    "deep":     {"n_sources": 5, "n_clips": 8, "window": 70},
 }
 
 class SynthesizeRequest(BaseModel):
@@ -131,6 +134,7 @@ def run_pipeline(job_id: str, topic: str, depth: str):
     cfg = DEPTH_CONFIG.get(depth, DEPTH_CONFIG["standard"])
     n_sources = cfg["n_sources"]
     n_clips   = cfg["n_clips"]
+    window    = cfg["window"]
 
     def update(status: str, **kwargs):
         with _jobs_lock:
@@ -149,14 +153,17 @@ def run_pipeline(job_id: str, topic: str, depth: str):
             with _jobs_lock:
                 jobs[job_id]["title"] = topic
 
-        # ── Stage 1: AI source discovery ──────────────────────────────────────
+        # ── Stage 1: AI source discovery (over-provisioned for backfill) ──────
         update("discovering_sources")
         sources = curate_sources(topic, n_sources=n_sources)
 
         # ── Stage 2: Parallel download + transcription ─────────────────────────
-        update("downloading_transcribing", sources_found=len(sources),
-               source_names=[s["podcast_name"] for s in sources])
-        enriched_sources = process_sources_parallel(sources, job_dir, user_topic=topic)
+        # Show only the primary picks to the user; extras are silent backups.
+        update("downloading_transcribing", sources_found=n_sources,
+               source_names=[s["podcast_name"] for s in sources[:n_sources]])
+        enriched_sources = process_sources_parallel(
+            sources, job_dir, user_topic=topic, target=n_sources, window_minutes=window,
+        )
 
         if not enriched_sources:
             raise RuntimeError("Could not download or transcribe any podcast sources.")

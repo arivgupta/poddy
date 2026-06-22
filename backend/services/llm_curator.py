@@ -1,5 +1,6 @@
 from typing import List, Dict, Optional, Any, Tuple
 import os
+import re
 import json
 from openai import OpenAI
 
@@ -20,6 +21,89 @@ def _parse_json(text: str) -> Any:
     if text.startswith("```"):
         text = text.split("\n", 1)[1].rsplit("```", 1)[0]
     return json.loads(text)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Clip boundary snapping
+#
+# The LLM picks start/end times by reading transcript text, so its numbers can
+# land mid-word or drift from reality. We snap each clip to the nearest Whisper
+# segment boundaries (which fall on natural pauses), clamp to the transcript's
+# real extent, and enforce sane min/max durations — eliminating mid-sentence
+# cuts and hallucinated timestamps.
+# ─────────────────────────────────────────────────────────────────────────────
+
+_SEG_RE = re.compile(r"^\s*([\d.]+)s\s*-\s*([\d.]+)s\s*:")
+
+
+def parse_transcript_segments(transcript: str) -> List[Tuple[float, float]]:
+    """Parse '12.3s - 16.7s: text' lines into sorted (start, end) tuples."""
+    segs: List[Tuple[float, float]] = []
+    for line in (transcript or "").splitlines():
+        m = _SEG_RE.match(line)
+        if not m:
+            continue
+        try:
+            start, end = float(m.group(1)), float(m.group(2))
+        except ValueError:
+            continue
+        if end > start:
+            segs.append((start, end))
+    segs.sort()
+    return segs
+
+
+def snap_clip_to_segments(
+    start: float,
+    end: float,
+    segments: List[Tuple[float, float]],
+    min_s: float = 45.0,
+    max_s: float = 420.0,
+) -> Optional[Tuple[float, float]]:
+    """
+    Snap a requested [start, end] window to Whisper segment boundaries.
+    Returns a cleaned (start, end) or None if it can't form a valid clip.
+    """
+    if not segments:
+        # No segment data — just sanity-clamp the raw request.
+        if end - start <= 0:
+            return None
+        return (max(0.0, start), end)
+
+    seg_starts = [s for s, _ in segments]
+    seg_ends = [e for _, e in segments]
+    audio_end = seg_ends[-1]
+
+    snapped_start = min(seg_starts, key=lambda x: abs(x - start))
+    snapped_end = min(seg_ends, key=lambda x: abs(x - end))
+
+    # Ensure end is after start; if not, grow forward to satisfy the minimum.
+    if snapped_end <= snapped_start:
+        target = snapped_start + min_s
+        later = [e for e in seg_ends if e > snapped_start]
+        if not later:
+            return None
+        snapped_end = min(later, key=lambda x: abs(x - target))
+
+    # Enforce a minimum length by extending the end (don't move the start).
+    if snapped_end - snapped_start < min_s:
+        target = snapped_start + min_s
+        candidates = [e for e in seg_ends if e > snapped_start]
+        if candidates:
+            snapped_end = min(candidates, key=lambda x: abs(x - target))
+
+    # Enforce a maximum length by trimming the end to the nearest segment edge.
+    if snapped_end - snapped_start > max_s:
+        target = snapped_start + max_s
+        candidates = [e for e in seg_ends if snapped_start < e <= target] or \
+                     [e for e in seg_ends if e > snapped_start]
+        snapped_end = min(candidates, key=lambda x: abs(x - target))
+
+    snapped_start = max(0.0, snapped_start)
+    snapped_end = min(snapped_end, audio_end)
+    if snapped_end - snapped_start <= 0:
+        return None
+    return (round(snapped_start, 2), round(snapped_end, 2))
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -58,18 +142,21 @@ def generate_title(topic: str) -> str:
 # Stage 1 — Expert source discovery
 # ─────────────────────────────────────────────────────────────────────────────
 
-def curate_sources(topic: str, n_sources: int = 3) -> List[dict]:
+def curate_sources(topic: str, n_sources: int = 3, n_extra: int = 2) -> List[dict]:
     """
     Ask GPT-4o to recommend the best podcast episodes for a topic.
-    n_sources controls how many distinct podcast sources to pull from.
+    n_sources controls how many distinct podcast sources we ultimately want;
+    n_extra adds ranked backup candidates so the pipeline can backfill when a
+    feed is dead or a download fails.
 
-    Returns list of { podcast_name, episode_title_hint, unique_angle }
+    Returns a ranked list of { podcast_name, episode_title_hint, unique_angle }.
     """
+    total = n_sources + max(0, n_extra)
 
     prompt = f"""You are a world-class podcast research librarian with encyclopedic knowledge of every major English-language podcast ever recorded.
 
 The user wants to deeply learn about: "{topic}"
-Number of sources needed: {n_sources}
+Number of sources needed: {total} (ranked best-first; we will use the top {n_sources} and keep the rest as backups)
 
 Your job is to identify the single best podcast episodes that cover this topic with maximum credibility, depth, and unique insight. Think of the episodes that would come up if you asked the world's best experts "what is the definitive audio resource on {topic}?"
 
@@ -171,15 +258,29 @@ Return ONLY valid JSON:
         temperature=0.2,
     )
     data = json.loads(response.choices[0].message.content)
-    clips = data.get("clips", [])
+    raw_clips = data.get("clips", [])
 
-    # Attach source info to each clip
-    for clip in clips:
+    # Snap every clip to real Whisper segment boundaries so we never cut a word
+    # in half and never trust a hallucinated timestamp.
+    segments = parse_transcript_segments(transcript)
+    clips = []
+    for clip in raw_clips:
+        try:
+            start = float(clip.get("start_time", 0))
+            end = float(clip.get("end_time", 0))
+        except (TypeError, ValueError):
+            continue
+        snapped = snap_clip_to_segments(start, end, segments)
+        if snapped is None:
+            print(f"  Dropping unusable clip ({start}-{end}s) from {source_info.get('podcast_name')}")
+            continue
+        clip["start_time"], clip["end_time"] = snapped
         clip["podcast_name"] = source_info.get("podcast_name", "Unknown")
         clip["episode_title"] = source_info.get("resolved_episode_title", source_info.get("episode_title_hint", ""))
         clip["apple_podcasts_url"] = source_info.get("apple_podcasts_url", "")
+        clips.append(clip)
 
-    print(f"  Extracted {len(clips)} clips from {source_info.get('podcast_name')}")
+    print(f"  Extracted {len(clips)} usable clips from {source_info.get('podcast_name')} ({len(raw_clips)} proposed)")
     return clips
 
 
