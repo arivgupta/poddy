@@ -288,11 +288,40 @@ Return ONLY valid JSON:
 # Stage 4 — Cross-source ordering, de-duplication, duration targeting
 # ─────────────────────────────────────────────────────────────────────────────
 
+def _clips_by_source(all_clips: List[dict]) -> Dict[str, List[int]]:
+    """Map each podcast source to its clip indices, best-quality first."""
+    by_source: Dict[str, List[int]] = {}
+    for i, clip in enumerate(all_clips):
+        by_source.setdefault(clip.get("podcast_name", "?"), []).append(i)
+    for idxs in by_source.values():
+        idxs.sort(key=lambda j: all_clips[j].get("quality_score", 5), reverse=True)
+    return by_source
+
+
+def _balanced_round_robin(all_clips: List[dict]) -> List[int]:
+    """Interleave clips across sources (best-first within each) so every source
+    is represented even when the LLM ordering fails or is degenerate."""
+    by_source = _clips_by_source(all_clips)
+    queues = list(by_source.values())
+    order: List[int] = []
+    while any(queues):
+        for q in queues:
+            if q:
+                order.append(q.pop(0))
+    return order
+
+
 def order_and_deduplicate(topic: str, all_clips: List[dict]) -> List[dict]:
     """
     Given clips from multiple sources, produce a final ordered playlist.
-    Removes semantic duplicates, reorders pedagogically — keeps everything else.
+    Removes semantic duplicates and reorders pedagogically — but GUARANTEES that
+    every source that contributed usable clips is represented in the final cut.
+    (A multi-source documentary that collapses to a single show defeats the whole
+    premise, and gpt-4o-mini's dedup pass will sometimes do exactly that.)
     """
+    if not all_clips:
+        return []
+
     clip_summaries = []
     for i, clip in enumerate(all_clips):
         duration = round(clip["end_time"] - clip["start_time"])
@@ -305,12 +334,16 @@ def order_and_deduplicate(topic: str, all_clips: List[dict]) -> List[dict]:
             "quality_score": clip.get("quality_score", 5),
         })
 
+    by_source = _clips_by_source(all_clips)
+    n_sources = len(by_source)
+
     prompt = f"""You are the chief editor of a premium audio documentary on: "{topic}"
 
-Below are candidate clips from multiple podcast sources. Your job:
+Below are candidate clips from {n_sources} DIFFERENT podcast sources. Your job:
 1. REMOVE semantic duplicates — if two clips explain the same concept, keep only the highest-quality one
 2. ORDER the remaining clips like a university lecture: foundations → mechanisms → practical protocols → nuance/edge cases
 3. KEEP all non-duplicate clips — do NOT cut based on time, keep everything that adds value
+4. PRESERVE SOURCE DIVERSITY — the final cut MUST include clips from EVERY one of the {n_sources} sources (multiple perspectives are the point). Never collapse the documentary down to a single show.
 
 CANDIDATE CLIPS:
 {json.dumps(clip_summaries, indent=2)}
@@ -321,20 +354,47 @@ Return ONLY valid JSON:
   "reasoning": "Brief explanation of curriculum structure"
 }}"""
 
-    response = _client().chat.completions.create(
-        model="gpt-4o-mini",
-        messages=[
-            {"role": "system", "content": "You are a curriculum designer. Output only valid JSON."},
-            {"role": "user", "content": prompt}
-        ],
-        response_format={"type": "json_object"},
-        temperature=0.2,
-    )
-    data = json.loads(response.choices[0].message.content)
-    ordered_indices = data.get("ordered_indices", list(range(len(all_clips))))
-    print(f"Curriculum order: {ordered_indices}")
-    print(f"Reasoning: {data.get('reasoning', '')}")
+    ordered_indices: List[int] = []
+    try:
+        response = _client().chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": "You are a curriculum designer. Output only valid JSON."},
+                {"role": "user", "content": prompt}
+            ],
+            response_format={"type": "json_object"},
+            temperature=0.2,
+        )
+        data = json.loads(response.choices[0].message.content)
+        raw = data.get("ordered_indices", [])
+        print(f"Curriculum order (LLM): {raw}")
+        print(f"Reasoning: {data.get('reasoning', '')}")
+        seen = set()
+        for i in raw:
+            if isinstance(i, int) and 0 <= i < len(all_clips) and i not in seen:
+                seen.add(i)
+                ordered_indices.append(i)
+    except Exception as e:
+        print(f"  Ordering LLM failed ({e}); using balanced round-robin")
 
+    # Degenerate result (empty, or so aggressive it dropped almost everything):
+    # fall back to a source-balanced ordering of all clips.
+    if len(ordered_indices) < min(len(all_clips), max(2, n_sources)):
+        print(f"  Ordering kept only {len(ordered_indices)} clips from {n_sources} sources — "
+              f"rebuilding a source-balanced cut")
+        ordered_indices = _balanced_round_robin(all_clips)
+
+    # Diversity guarantee: re-insert the best clip from any source the LLM dropped
+    # entirely, so the documentary always reflects every show it ingested.
+    represented = {all_clips[i].get("podcast_name", "?") for i in ordered_indices}
+    for src, idxs in by_source.items():
+        if src not in represented and idxs:
+            best = idxs[0]  # already sorted best-first
+            ordered_indices.append(best)
+            represented.add(src)
+            print(f"  Re-added best clip from dropped source: {src}")
+
+    print(f"Final order: {ordered_indices}  (sources: {sorted(represented)})")
     return [all_clips[i] for i in ordered_indices if i < len(all_clips)]
 
 
