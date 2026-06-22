@@ -1,121 +1,203 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Play, Pause, SkipBack, SkipForward, ChevronLeft, Download, ExternalLink, Sparkles, Radio } from 'lucide-react';
+import {
+  Play, Pause, ChevronLeft, Download, ExternalLink, Sparkles, Radio,
+  Volume2, Volume1, VolumeX, ChevronFirst, ChevronLast, Moon, Keyboard,
+  AlignLeft, List, Copy, Check, Share2, Rewind, FastForward, X, ListVideo,
+  Compass, GraduationCap, ArrowRight, CornerDownRight, Layers,
+} from 'lucide-react';
 import TopicArtwork from './TopicArtwork';
 import RetroRadioTicker from './RetroRadioTicker';
+import { usePlayer } from '../lib/playerContext';
+import { SPEEDS, SKIP_SECONDS } from '../lib/playerConstants';
+import { buildShowNotesMarkdown, buildShareText, slugify } from '../lib/showNotes';
 
 const BACKEND = import.meta.env.VITE_BACKEND_URL || 'http://127.0.0.1:8000';
-const SPEEDS  = [0.75, 1, 1.25, 1.5, 2, 2.5, 3];
+const SLEEP_OPTIONS = [5, 10, 15, 30, 45];
 
 function formatTime(ms) {
   if (!ms || isNaN(ms)) return '0:00';
   const totalSec = Math.floor(ms / 1000);
-  const m = Math.floor(totalSec / 60);
+  const h = Math.floor(totalSec / 3600);
+  const m = Math.floor((totalSec % 3600) / 60);
   const s = totalSec % 60;
-  return `${m}:${s.toString().padStart(2, '0')}`;
+  return h > 0
+    ? `${h}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`
+    : `${m}:${s.toString().padStart(2, '0')}`;
 }
 
-export default function SynthPlayer({ topic, title, jobId, audioUrl, chapters, sourcesUsed, durationMs, onBack }) {
-  const [isPlaying, setIsPlaying]           = useState(false);
-  const [currentMs, setCurrentMs]           = useState(0);
-  const [totalMs, setTotalMs]               = useState(durationMs || 0);
-  const [activeChapterIdx, setActiveChapterIdx] = useState(0);
-  const [speed, setSpeed]                   = useState(1);
-  const [isDragging, setIsDragging]         = useState(false);
+const SHORTCUTS = [
+  { keys: ['Space', 'K'], label: 'Play / pause' },
+  { keys: ['J', '←'],     label: `Back ${SKIP_SECONDS}s` },
+  { keys: ['L', '→'],     label: `Forward ${SKIP_SECONDS}s` },
+  { keys: ['P'],          label: 'Previous chapter' },
+  { keys: ['N'],          label: 'Next chapter' },
+  { keys: ['↑', '↓'],     label: 'Volume up / down' },
+  { keys: ['M'],          label: 'Mute' },
+  { keys: ['[', ']'],     label: 'Slower / faster' },
+  { keys: ['?'],          label: 'Toggle shortcuts' },
+];
 
-  const audioRef    = useRef(null);
+const FOLLOWUP_KINDS = {
+  deeper:      { label: 'Go deeper',   icon: Compass,        color: 'text-terra',  badge: 'bg-terra/8 border-terra/20 text-terra-dark' },
+  broaden:     { label: 'More like this', icon: Layers,      color: 'text-sage',   badge: 'bg-sage/10 border-sage/20 text-sage' },
+  next:        { label: 'Next step',   icon: ArrowRight,     color: 'text-dusty',  badge: 'bg-dusty/10 border-dusty/20 text-dusty' },
+  foundations: { label: 'Foundations', icon: GraduationCap,  color: 'text-ink-500', badge: 'bg-cream-300 border-ink-900/10 text-ink-700' },
+};
+
+export default function SynthPlayer({ onBack, onGenerate }) {
+  const player = usePlayer();
+  const {
+    track, isPlaying, currentMs, totalMs, activeChapterIdx, chapters,
+    speed, setSpeed, volume, setVolume, muted, setMuted, autoplay, setAutoplay,
+    resumedAt, sleepEndsAt, sleepRemaining, setSleep, clearSleep,
+    togglePlay, skip, seekToMs, jumpToChapter, prevChapter, nextChapter,
+    queue, queueIndex, hasNextTrack,
+  } = player;
+
+  const [view, setView]                   = useState('chapters');
+  const [isDragging, setIsDragging]       = useState(false);
+  const [showShortcuts, setShowShortcuts] = useState(false);
+  const [copied, setCopied]               = useState(false);
+  const [followups, setFollowups]         = useState({ status: 'idle', items: [], focus: null });
+
   const progressRef = useRef(null);
+  const chapterRefs = useRef([]);
 
-  useEffect(() => {
-    const audio = audioRef.current;
-    if (!audio) return;
-    const onTime = () => {
-      const ms = audio.currentTime * 1000;
-      setCurrentMs(ms);
-      let idx = 0;
-      for (let i = 0; i < chapters.length; i++) {
-        if (chapters[i].start_ms <= ms) idx = i; else break;
-      }
-      setActiveChapterIdx(idx);
-    };
-    const onLoaded = () => setTotalMs(audio.duration * 1000);
-    const onEnded  = () => setIsPlaying(false);
-    audio.addEventListener('timeupdate', onTime);
-    audio.addEventListener('loadedmetadata', onLoaded);
-    audio.addEventListener('ended', onEnded);
-    return () => {
-      audio.removeEventListener('timeupdate', onTime);
-      audio.removeEventListener('loadedmetadata', onLoaded);
-      audio.removeEventListener('ended', onEnded);
-    };
-  }, [chapters]);
+  const topic = track?.topic || '';
+  const title = track?.title || '';
+  const jobId = track?.jobId;
+  const audioUrl = track?.audioUrl;
+  const sourcesUsed = track?.sourcesUsed || [];
+  const durationMs = track?.durationMs || 0;
+  const nextEntry = hasNextTrack ? queue[queueIndex + 1] : null;
 
-  useEffect(() => { if (audioRef.current) audioRef.current.playbackRate = speed; }, [speed]);
-
-  const togglePlay = () => {
-    const audio = audioRef.current;
-    if (!audio) return;
-    if (isPlaying) { audio.pause(); setIsPlaying(false); }
-    else { audio.play().then(() => setIsPlaying(true)).catch(console.error); }
-  };
-
-  const skip = (s) => {
-    const audio = audioRef.current;
-    if (!audio) return;
-    audio.currentTime = Math.max(0, Math.min(audio.currentTime + s, audio.duration || 0));
-  };
-
-  const jumpToChapter = (ch) => {
-    const audio = audioRef.current;
-    if (!audio) return;
-    audio.currentTime = ch.start_ms / 1000;
-    audio.play().then(() => setIsPlaying(true)).catch(console.error);
-  };
-
-  const seekToPosition = useCallback((clientX) => {
-    const audio = audioRef.current;
-    const bar   = progressRef.current;
-    if (!audio || !bar) return;
+  // ── Seek bar: pointer + keyboard ───────────────────────────────────────────
+  const seekToClientX = useCallback((clientX) => {
+    const bar = progressRef.current; if (!bar) return;
     const rect = bar.getBoundingClientRect();
-    const pct  = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
-    audio.currentTime = pct * (audio.duration || 0);
-    setCurrentMs(pct * (audio.duration || 0) * 1000);
+    const pct = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+    seekToMs(pct * (totalMs || durationMs || 0));
+  }, [seekToMs, totalMs, durationMs]);
+
+  const handlePointerDown = (e) => {
+    setIsDragging(true);
+    try { e.currentTarget.setPointerCapture?.(e.pointerId); } catch { /* unsupported */ }
+    seekToClientX(e.clientX);
+  };
+  const handlePointerMove = (e) => { if (isDragging) seekToClientX(e.clientX); };
+  const handlePointerUp = () => setIsDragging(false);
+
+  const handleBarKeyDown = (e) => {
+    const dur = totalMs || 0;
+    switch (e.key) {
+      case 'ArrowRight': e.preventDefault(); skip(SKIP_SECONDS); break;
+      case 'ArrowLeft':  e.preventDefault(); skip(-SKIP_SECONDS); break;
+      case 'Home':       e.preventDefault(); seekToMs(0); break;
+      case 'End':        e.preventDefault(); seekToMs(dur); break;
+      case 'PageUp':     e.preventDefault(); skip(60); break;
+      case 'PageDown':   e.preventDefault(); skip(-60); break;
+      default: break;
+    }
+  };
+
+  // '?' / Escape for the shortcuts overlay (playback keys live in the provider).
+  useEffect(() => {
+    const onKey = (e) => {
+      const t = e.target, tag = t?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || t?.isContentEditable) return;
+      if (e.key === '?') { e.preventDefault(); setShowShortcuts((v) => !v); }
+      else if (e.key === 'Escape') setShowShortcuts(false);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
   }, []);
 
-  const handleBarMouseDown = (e) => { setIsDragging(true); seekToPosition(e.clientX); };
-
+  // Auto-scroll active chapter into view.
   useEffect(() => {
-    if (!isDragging) return;
-    const onMove = (e) => seekToPosition(e.clientX);
-    const onUp   = () => setIsDragging(false);
-    window.addEventListener('mousemove', onMove);
-    window.addEventListener('mouseup', onUp);
-    return () => { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp); };
-  }, [isDragging, seekToPosition]);
+    if (view !== 'chapters') return;
+    const el = chapterRefs.current[activeChapterIdx];
+    if (el) el.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  }, [activeChapterIdx, view]);
 
+  // ── Learning path: AI-suggested follow-up casts ────────────────────────────
+  const fetchFollowups = useCallback(async (focusIdx = null) => {
+    setFollowups({ status: 'loading', items: [], focus: focusIdx });
+    try {
+      const res = await fetch(`${BACKEND}/suggest_followups`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ topic, title, chapters, focus_index: focusIdx }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const data = await res.json();
+      setFollowups({ status: 'ready', items: data.suggestions || [], focus: focusIdx });
+    } catch (e) {
+      console.error('Follow-up fetch failed:', e);
+      setFollowups({ status: 'error', items: [], focus: focusIdx });
+    }
+  }, [topic, title, chapters]);
+
+  // Fetch suggestions the first time the listener opens the Learning Path tab.
+  useEffect(() => {
+    if (view === 'path' && followups.status === 'idle') fetchFollowups(null);
+  }, [view, followups.status, fetchFollowups]);
+
+  const goDeeper = useCallback((idx) => {
+    setView('path');
+    fetchFollowups(idx);
+  }, [fetchFollowups]);
+
+  const handleGenerateFollowup = useCallback((item) => {
+    if (!onGenerate) return;
+    onGenerate(item.topic, item.depth || 'standard', {
+      parentJobId: jobId,
+      parentTitle: title || topic,
+      rootTopic: track?.rootTopic || topic,
+    });
+  }, [onGenerate, jobId, title, topic, track]);
+
+  // ── Export / share ─────────────────────────────────────────────────────────
   const handleDownload = () => {
     if (audioUrl && audioUrl.startsWith('blob:')) {
       const a = document.createElement('a');
       a.href = audioUrl;
       a.download = `Poddy - ${(title || topic).replace(/[/\\]/g, '-').slice(0, 50)}.mp3`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
     } else {
       window.open(`${BACKEND}/download/${jobId}`, '_blank');
     }
   };
 
+  const notesArgs = { title, topic, chapters, sourcesUsed, totalMs: totalMs || durationMs };
+
+  const handleCopyNotes = async () => {
+    try { await navigator.clipboard.writeText(buildShowNotesMarkdown(notesArgs)); setCopied(true); setTimeout(() => setCopied(false), 1800); }
+    catch { /* clipboard blocked */ }
+  };
+
+  const handleDownloadNotes = () => {
+    const blob = new Blob([buildShowNotesMarkdown(notesArgs)], { type: 'text/markdown' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = `poddy-${slugify(title || topic)}.md`;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  const handleShare = async () => {
+    const text = buildShareText({ title, topic, sourcesUsed, totalMs: totalMs || durationMs });
+    if (navigator.share) { try { await navigator.share({ title: title || topic, text }); return; } catch { /* cancelled */ } }
+    try { await navigator.clipboard.writeText(text); setCopied(true); setTimeout(() => setCopied(false), 1800); } catch { /* blocked */ }
+  };
+
+  if (!track) return null;
+
   const progress = totalMs > 0 ? (currentMs / totalMs) * 100 : 0;
+  const VolIcon = muted || volume === 0 ? VolumeX : volume < 0.5 ? Volume1 : Volume2;
 
   return (
     <div className="animate-entrance w-full max-w-[820px]">
-      {audioUrl && <audio ref={audioRef} src={audioUrl} preload="auto" />}
-
-      {/* Back */}
-      <button
-        onClick={onBack}
-        className="flex items-center gap-1.5 text-ink-500 text-sm mb-6 hover:text-terra transition-colors"
-      >
+      <button onClick={onBack} className="flex items-center gap-1.5 text-ink-500 text-sm mb-6 hover:text-terra transition-colors">
         <ChevronLeft size={16} /> New Poddy
       </button>
 
@@ -124,146 +206,342 @@ export default function SynthPlayer({ topic, title, jobId, audioUrl, chapters, s
         {/* Dark hero header */}
         <div className="bg-warm-dark px-8 py-8 flex gap-6 items-center flex-wrap">
           <TopicArtwork topic={topic} title={title} size={140} isPlaying={isPlaying} />
-
           <div className="flex-1 min-w-[200px]">
-            <div className="inline-block px-2.5 py-0.5 rounded-full bg-white/10 text-cream-400/80 text-[0.68rem] font-semibold tracking-[0.08em] uppercase mb-3 border border-white/6">
-              Poddy
+            <div className="flex flex-wrap items-center gap-2 mb-3">
+              <span className="inline-block px-2.5 py-0.5 rounded-full bg-white/10 text-cream-400/80 text-[0.68rem] font-semibold tracking-[0.08em] uppercase border border-white/6">
+                Poddy
+              </span>
+              {track?.parentTitle && (
+                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-terra/20 text-cream-50/90 text-[0.68rem] font-medium border border-terra/30" title={`Part of your learning path, continuing from "${track.parentTitle}"`}>
+                  <CornerDownRight size={11} /> Continuing from {track.parentTitle.length > 32 ? track.parentTitle.slice(0, 32) + '…' : track.parentTitle}
+                </span>
+              )}
             </div>
             <h2 className="font-display font-semibold text-[1.75rem] leading-tight text-cream-50 mb-1">{title || topic}</h2>
-            {title && title !== topic && (
-              <p className="text-cream-400/60 text-sm mb-2">{topic}</p>
-            )}
-            <p className="text-cream-400/70 text-sm mb-4">
-              {sourcesUsed.length} sources · {formatTime(totalMs || durationMs)}
-            </p>
+            {title && title !== topic && <p className="text-cream-400/60 text-sm mb-2">{topic}</p>}
+            <p className="text-cream-400/70 text-sm mb-4">{sourcesUsed.length} sources · {formatTime(totalMs || durationMs)}</p>
             <div className="flex flex-wrap gap-1.5 mb-4">
               {sourcesUsed.map((s, i) => (
                 <span key={i} className="px-2.5 py-0.5 rounded-full bg-white/8 border border-white/8 text-cream-400/70 text-[0.72rem]">{s}</span>
               ))}
             </div>
-            <button
-              onClick={handleDownload}
-              className="flex items-center gap-1.5 px-4 py-2 rounded-full bg-white/10 border border-white/10 text-cream-50/80 font-semibold text-sm hover:bg-white/15 transition-colors"
-            >
-              <Download size={13} /> Download MP3
-            </button>
+            <div className="flex flex-wrap gap-2">
+              <button onClick={handleDownload} className="flex items-center gap-1.5 px-4 py-2 rounded-full bg-white/10 border border-white/10 text-cream-50/80 font-semibold text-sm hover:bg-white/15 transition-colors">
+                <Download size={13} /> Download MP3
+              </button>
+              <button onClick={handleShare} className="flex items-center gap-1.5 px-4 py-2 rounded-full bg-white/10 border border-white/10 text-cream-50/80 font-semibold text-sm hover:bg-white/15 transition-colors">
+                {copied ? <Check size={13} /> : <Share2 size={13} />} {copied ? 'Copied' : 'Share'}
+              </button>
+            </div>
           </div>
         </div>
 
         {/* Player controls */}
         <div className="px-8 py-6 bg-cream-200 border-b border-ink-900/6">
-          {/* Progress bar */}
           <div
             ref={progressRef}
-            onMouseDown={handleBarMouseDown}
-            className="w-full h-1.5 bg-cream-300 rounded-full cursor-pointer mb-2 select-none relative group"
+            role="slider" tabIndex={0} aria-label="Seek"
+            aria-valuemin={0} aria-valuemax={Math.round((totalMs || 0) / 1000)} aria-valuenow={Math.round(currentMs / 1000)}
+            aria-valuetext={`${formatTime(currentMs)} of ${formatTime(totalMs || durationMs)}`}
+            onPointerDown={handlePointerDown} onPointerMove={handlePointerMove} onPointerUp={handlePointerUp}
+            onKeyDown={handleBarKeyDown}
+            className="w-full h-2 bg-cream-300 rounded-full cursor-pointer mb-2 select-none relative group outline-none focus-visible:ring-2 focus-visible:ring-terra/40 touch-none"
           >
-            <div
-              className="h-full bg-terra rounded-full relative"
-              style={{ width: `${progress}%`, transition: isDragging ? 'none' : 'width 0.2s linear' }}
-            >
-              <div className="absolute right-[-6px] top-[-3px] w-3 h-3 rounded-full bg-terra border-2 border-cream-50 cursor-grab shadow-sm opacity-0 group-hover:opacity-100 transition-opacity" />
+            <div className="h-full bg-terra rounded-full relative" style={{ width: `${progress}%`, transition: isDragging ? 'none' : 'width 0.2s linear' }}>
+              <div className="absolute right-[-7px] top-1/2 -translate-y-1/2 w-3.5 h-3.5 rounded-full bg-terra border-2 border-cream-50 cursor-grab shadow-sm opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100 transition-opacity" />
             </div>
           </div>
-          <div className="flex justify-between text-ink-400 text-xs mb-5 tabular-nums">
+          <div className="flex justify-between text-ink-400 text-xs mb-1 tabular-nums">
             <span>{formatTime(currentMs)}</span>
-            <span>{formatTime(totalMs || durationMs)}</span>
+            <span>-{formatTime(Math.max(0, (totalMs || durationMs) - currentMs))}</span>
+          </div>
+          <div className="h-4 mb-3 text-center">
+            {resumedAt > 0 && (
+              <span className="animate-entrance inline-flex items-center gap-1 text-[0.7rem] text-terra-dark">
+                <Rewind size={11} /> Resumed from {formatTime(resumedAt)}
+              </span>
+            )}
           </div>
 
           <RetroRadioTicker title={title || topic} />
 
-          {/* Controls */}
-          <div className="flex justify-center items-center gap-10 mb-5">
-            <button onClick={() => skip(-15)} className="text-ink-500 hover:text-terra transition-colors flex flex-col items-center gap-0.5">
-              <SkipBack size={20} /><span className="text-[0.55rem]">15s</span>
+          <div className="flex justify-center items-center gap-6 sm:gap-8 mb-5">
+            <button onClick={prevChapter} title="Previous chapter (P)" className="text-ink-500 hover:text-terra transition-colors"><ChevronFirst size={22} /></button>
+            <button onClick={() => skip(-SKIP_SECONDS)} title={`Back ${SKIP_SECONDS}s (J)`} className="text-ink-500 hover:text-terra transition-colors flex flex-col items-center gap-0.5">
+              <Rewind size={20} /><span className="text-[0.55rem]">{SKIP_SECONDS}s</span>
             </button>
-
-            <button
-              onClick={togglePlay}
-              className={`w-[60px] h-[60px] rounded-full bg-terra text-cream-50 flex items-center justify-center shrink-0 hover:scale-105 active:scale-95 transition-all ${
-                isPlaying ? 'shadow-[0_0_24px_rgba(191,86,48,0.35)]' : 'shadow-[0_4px_16px_rgba(30,24,20,0.12)]'
-              }`}
-            >
+            <button onClick={togglePlay} title="Play / pause (Space)" className={`w-[60px] h-[60px] rounded-full bg-terra text-cream-50 flex items-center justify-center shrink-0 hover:scale-105 active:scale-95 transition-all ${isPlaying ? 'shadow-[0_0_24px_rgba(191,86,48,0.35)]' : 'shadow-[0_4px_16px_rgba(30,24,20,0.12)]'}`}>
               {isPlaying ? <Pause size={24} fill="currentColor" /> : <Play size={24} fill="currentColor" className="ml-0.5" />}
             </button>
+            <button onClick={() => skip(SKIP_SECONDS)} title={`Forward ${SKIP_SECONDS}s (L)`} className="text-ink-500 hover:text-terra transition-colors flex flex-col items-center gap-0.5">
+              <FastForward size={20} /><span className="text-[0.55rem]">{SKIP_SECONDS}s</span>
+            </button>
+            <button onClick={nextChapter} title="Next chapter (N)" className="text-ink-500 hover:text-terra transition-colors"><ChevronLast size={22} /></button>
+          </div>
 
-            <button onClick={() => skip(15)} className="text-ink-500 hover:text-terra transition-colors flex flex-col items-center gap-0.5">
-              <SkipForward size={20} /><span className="text-[0.55rem]">15s</span>
+          <div className="flex flex-wrap items-center justify-center gap-x-6 gap-y-3">
+            <div className="flex items-center gap-2">
+              <button onClick={() => setMuted(!muted)} title="Mute (M)" className="text-ink-500 hover:text-terra transition-colors"><VolIcon size={18} /></button>
+              <input type="range" min={0} max={1} step={0.01} value={muted ? 0 : volume}
+                onChange={(e) => { setMuted(false); setVolume(parseFloat(e.target.value)); }}
+                aria-label="Volume" className="poddy-range w-20" />
+            </div>
+            <div className="flex items-center gap-1.5">
+              {SPEEDS.map(s => (
+                <button key={s} onClick={() => setSpeed(s)} className={`px-2 py-1 rounded-full text-[0.7rem] transition-all cursor-pointer ${speed === s ? 'border-2 border-terra bg-terra/8 text-terra-dark font-semibold' : 'border border-ink-900/10 text-ink-400 hover:border-ink-900/20'}`}>
+                  {s}×
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center justify-center gap-x-5 gap-y-2 mt-4">
+            <div className="flex items-center gap-1.5">
+              <Moon size={14} className={sleepEndsAt ? 'text-terra' : 'text-ink-400'} />
+              {sleepEndsAt ? (
+                <button onClick={clearSleep} className="text-[0.72rem] text-terra-dark font-semibold hover:underline">
+                  Sleep in {formatTime(sleepRemaining * 1000)} · cancel
+                </button>
+              ) : (
+                <div className="flex items-center gap-1">
+                  <span className="text-[0.7rem] text-ink-400">Sleep</span>
+                  {SLEEP_OPTIONS.map(m => (
+                    <button key={m} onClick={() => setSleep(m)} className="px-1.5 py-0.5 rounded-full text-[0.68rem] text-ink-400 border border-ink-900/10 hover:border-terra/40 hover:text-terra-dark transition-colors">{m}m</button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <button onClick={() => setAutoplay(!autoplay)} title="Autoplay the next cast when this one ends" className="flex items-center gap-1.5 text-[0.72rem] transition-colors">
+              <ListVideo size={14} className={autoplay ? 'text-terra' : 'text-ink-400'} />
+              <span className={autoplay ? 'text-terra-dark font-semibold' : 'text-ink-400'}>Autoplay {autoplay ? 'on' : 'off'}</span>
+            </button>
+
+            <button onClick={() => setShowShortcuts(true)} className="flex items-center gap-1.5 text-[0.72rem] text-ink-400 hover:text-terra-dark transition-colors">
+              <Keyboard size={14} /> Shortcuts
             </button>
           </div>
 
-          {/* Speed */}
-          <div className="flex justify-center gap-1.5">
-            {SPEEDS.map(s => (
-              <button key={s} onClick={() => setSpeed(s)} className={`px-2.5 py-1 rounded-full text-[0.72rem] transition-all cursor-pointer ${
-                speed === s
-                  ? 'border-2 border-terra bg-terra/8 text-terra-dark font-semibold'
-                  : 'border border-ink-900/10 text-ink-400 hover:border-ink-900/20'
-              }`}>
-                {s}×
-              </button>
-            ))}
+          {autoplay && nextEntry && (
+            <p className="text-center text-[0.7rem] text-ink-400 mt-3">
+              Up next · <span className="text-ink-500 font-medium">{nextEntry.title || nextEntry.topic}</span>
+            </p>
+          )}
+        </div>
+
+        {/* View toggle */}
+        <div className="px-8 pt-5">
+          <div className="inline-flex p-1 rounded-full bg-cream-200 border border-ink-900/6">
+            <button onClick={() => setView('chapters')} className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-[0.78rem] font-semibold transition-all ${view === 'chapters' ? 'bg-cream-50 text-terra-dark shadow-sm' : 'text-ink-400 hover:text-ink-900'}`}>
+              <List size={13} /> Chapters
+            </button>
+            <button onClick={() => setView('notes')} className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-[0.78rem] font-semibold transition-all ${view === 'notes' ? 'bg-cream-50 text-terra-dark shadow-sm' : 'text-ink-400 hover:text-ink-900'}`}>
+              <AlignLeft size={13} /> Show Notes
+            </button>
+            <button onClick={() => setView('path')} className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-[0.78rem] font-semibold transition-all ${view === 'path' ? 'bg-cream-50 text-terra-dark shadow-sm' : 'text-ink-400 hover:text-ink-900'}`}>
+              <Compass size={13} /> Learning Path
+            </button>
           </div>
         </div>
 
         {/* Chapters */}
-        <div className="px-8 py-6">
-          <h3 className="text-[0.68rem] text-ink-400 uppercase tracking-[0.12em] mb-3 font-semibold">
-            Chapters · {chapters.length}
-          </h3>
-          <div className="flex flex-col gap-1">
-            {chapters.map((ch, idx) => {
-              const isActive = idx === activeChapterIdx;
-              const isClip   = ch.type === 'clip';
-              const clipSec  = ch.end_ms && ch.start_ms ? Math.round((ch.end_ms - ch.start_ms) / 1000) : null;
-              return (
-                <div
-                  key={idx}
-                  onClick={() => jumpToChapter(ch)}
-                  className={`flex items-center gap-3 px-3.5 py-3 rounded-xl cursor-pointer transition-all ${
-                    isActive
-                      ? 'bg-terra/8 border border-terra/20'
-                      : 'border border-transparent hover:bg-cream-200'
-                  }`}
-                >
-                  <div className={`w-7 h-7 rounded-full shrink-0 flex items-center justify-center border ${
-                    isClip
-                      ? 'bg-sage/8 border-sage/18'
-                      : 'bg-dusty/8 border-dusty/18'
-                  }`}>
-                    {isClip ? <Radio size={10} className="text-sage" /> : <Sparkles size={10} className="text-dusty" />}
-                  </div>
-
-                  <div className="flex-1 min-w-0">
-                    <div className={`text-sm truncate ${isActive ? 'font-semibold text-terra-dark' : 'text-ink-900'}`}>
-                      {ch.title}
+        {view === 'chapters' && (
+          <div className="px-8 py-6">
+            <h3 className="text-[0.68rem] text-ink-400 uppercase tracking-[0.12em] mb-3 font-semibold">Chapters · {chapters.length}</h3>
+            <div className="flex flex-col gap-1 max-h-[460px] overflow-y-auto pr-1">
+              {chapters.map((ch, idx) => {
+                const isActive = idx === activeChapterIdx;
+                const isClip = ch.type === 'clip';
+                const clipSec = ch.end_ms && ch.start_ms ? Math.round((ch.end_ms - ch.start_ms) / 1000) : null;
+                return (
+                  <div key={idx} ref={(el) => { chapterRefs.current[idx] = el; }} onClick={() => jumpToChapter(ch)}
+                    className={`flex items-center gap-3 px-3.5 py-3 rounded-xl cursor-pointer transition-all ${isActive ? 'bg-terra/8 border border-terra/20' : 'border border-transparent hover:bg-cream-200'}`}>
+                    <div className={`w-7 h-7 rounded-full shrink-0 flex items-center justify-center border ${isClip ? 'bg-sage/8 border-sage/18' : 'bg-dusty/8 border-dusty/18'}`}>
+                      {isClip ? <Radio size={10} className="text-sage" /> : <Sparkles size={10} className="text-dusty" />}
                     </div>
-                    {isClip && ch.source_podcast && (
-                      <div className="text-ink-400 text-[0.7rem] truncate mt-0.5">
-                        {ch.source_podcast}{ch.source_episode ? ` · ${ch.source_episode.slice(0, 40)}…` : ''}
-                        {clipSec ? ` · ${Math.floor(clipSec/60)}m${clipSec%60}s` : ''}
-                      </div>
+                    <div className="flex-1 min-w-0">
+                      <div className={`text-sm truncate ${isActive ? 'font-semibold text-terra-dark' : 'text-ink-900'}`}>{ch.title}</div>
+                      {isClip && ch.source_podcast && (
+                        <div className="text-ink-400 text-[0.7rem] truncate mt-0.5">
+                          {ch.source_podcast}{ch.source_episode ? ` · ${ch.source_episode.slice(0, 40)}…` : ''}{clipSec ? ` · ${Math.floor(clipSec/60)}m${clipSec%60}s` : ''}
+                        </div>
+                      )}
+                    </div>
+                    <span className={`text-xs tabular-nums shrink-0 ${isActive ? 'text-terra-dark' : 'text-ink-400'}`}>{formatTime(ch.start_ms)}</span>
+                    {isClip && (
+                      <button onClick={(e) => { e.stopPropagation(); goDeeper(idx); }} title="Love this? Build a deeper cast on it" className="text-ink-300 hover:text-terra shrink-0 transition-colors">
+                        <Compass size={13} />
+                      </button>
+                    )}
+                    {isClip && ch.apple_podcasts_url && (
+                      <a href={ch.apple_podcasts_url} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()} title="Open original episode" className="text-ink-300 hover:text-terra shrink-0 transition-colors">
+                        <ExternalLink size={11} />
+                      </a>
                     )}
                   </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
-                  <span className={`text-xs tabular-nums shrink-0 ${isActive ? 'text-terra-dark' : 'text-ink-400'}`}>
-                    {formatTime(ch.start_ms)}
+        {/* Show Notes */}
+        {view === 'notes' && (
+          <div className="px-8 py-6">
+            <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
+              <h3 className="text-[0.68rem] text-ink-400 uppercase tracking-[0.12em] font-semibold">Show Notes</h3>
+              <div className="flex gap-2">
+                <button onClick={handleCopyNotes} className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-cream-200 border border-ink-900/8 text-ink-500 text-[0.72rem] font-semibold hover:text-terra-dark hover:border-terra/30 transition-colors">
+                  {copied ? <Check size={12} /> : <Copy size={12} />} {copied ? 'Copied' : 'Copy'}
+                </button>
+                <button onClick={handleDownloadNotes} className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-cream-200 border border-ink-900/8 text-ink-500 text-[0.72rem] font-semibold hover:text-terra-dark hover:border-terra/30 transition-colors">
+                  <Download size={12} /> .md
+                </button>
+              </div>
+            </div>
+            <div className="flex flex-col gap-4 max-h-[520px] overflow-y-auto pr-1">
+              {chapters.map((ch, idx) => {
+                const isClip = ch.type === 'clip';
+                const hasBody = isClip ? ch.summary : ch.text;
+                return (
+                  <div key={idx} className="flex gap-3">
+                    <button onClick={() => jumpToChapter(ch)} className="shrink-0 text-[0.7rem] tabular-nums text-terra-dark font-semibold hover:underline pt-0.5 w-10 text-right" title="Jump to this point">
+                      {formatTime(ch.start_ms)}
+                    </button>
+                    <div className="flex-1 min-w-0 border-l-2 border-cream-300 pl-4 pb-1">
+                      <div className="flex items-center gap-2 mb-1">
+                        {isClip ? <Radio size={11} className="text-sage shrink-0" /> : <Sparkles size={11} className="text-dusty shrink-0" />}
+                        <span className="text-sm font-semibold text-ink-900">{ch.title}</span>
+                      </div>
+                      {hasBody ? (
+                        <p className={`text-[0.85rem] leading-relaxed ${isClip ? 'text-ink-500' : 'text-ink-500 italic'}`}>
+                          {isClip ? ch.summary : `“${ch.text}”`}
+                        </p>
+                      ) : (
+                        <p className="text-[0.8rem] text-ink-300 italic">No notes available for this segment.</p>
+                      )}
+                      {isClip && (ch.source_podcast || ch.apple_podcasts_url) && (
+                        <div className="flex items-center gap-2 mt-1.5">
+                          {ch.source_podcast && (
+                            <span className="text-[0.7rem] text-ink-400">{ch.source_podcast}{ch.source_episode ? ` · ${ch.source_episode.slice(0, 50)}` : ''}</span>
+                          )}
+                          {ch.apple_podcasts_url && (
+                            <a href={ch.apple_podcasts_url} target="_blank" rel="noopener noreferrer" className="text-ink-300 hover:text-terra inline-flex items-center gap-0.5 text-[0.7rem]">
+                              <ExternalLink size={10} /> source
+                            </a>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Learning Path */}
+        {view === 'path' && (
+          <div className="px-8 py-6">
+            <div className="flex items-center justify-between mb-1 flex-wrap gap-2">
+              <h3 className="text-[0.68rem] text-ink-400 uppercase tracking-[0.12em] font-semibold flex items-center gap-1.5">
+                <Compass size={12} /> Continue your learning path
+              </h3>
+              {followups.status === 'ready' && (
+                <button onClick={() => fetchFollowups(followups.focus)} className="text-[0.7rem] text-ink-400 hover:text-terra-dark transition-colors">
+                  Refresh
+                </button>
+              )}
+            </div>
+            <p className="text-ink-500 text-[0.85rem] leading-relaxed mb-4">
+              {followups.focus != null && chapters[followups.focus]
+                ? <>Building on <span className="text-terra-dark font-medium">“{chapters[followups.focus].title}”</span> — here’s where to go next.</>
+                : <>Loved this? Fork it into the next casts of a personal curriculum. Each one generates a brand-new documentary.</>}
+            </p>
+
+            {followups.status === 'loading' && (
+              <div className="flex flex-col gap-3">
+                {[0, 1, 2, 3].map(i => (
+                  <div key={i} className="h-[76px] rounded-2xl bg-cream-200 border border-ink-900/6 animate-pulse" />
+                ))}
+                <p className="text-center text-[0.72rem] text-ink-400 mt-1">Designing your next steps…</p>
+              </div>
+            )}
+
+            {followups.status === 'error' && (
+              <div className="text-center py-8">
+                <p className="text-ink-500 text-sm mb-3">Couldn’t load suggestions right now.</p>
+                <button onClick={() => fetchFollowups(followups.focus)} className="px-4 py-1.5 rounded-full bg-cream-200 border border-ink-900/10 text-ink-500 text-sm font-semibold hover:text-terra-dark hover:border-terra/30 transition-colors">
+                  Try again
+                </button>
+              </div>
+            )}
+
+            {followups.status === 'ready' && followups.items.length === 0 && (
+              <p className="text-ink-400 text-sm italic py-6 text-center">No follow-ups available for this cast.</p>
+            )}
+
+            {followups.status === 'ready' && followups.items.length > 0 && (
+              <div className="flex flex-col gap-3">
+                {followups.items.map((item, i) => {
+                  const meta = FOLLOWUP_KINDS[item.kind] || FOLLOWUP_KINDS.next;
+                  const KindIcon = meta.icon;
+                  return (
+                    <div key={i} className="group flex items-start gap-3.5 p-4 rounded-2xl bg-cream-50 border border-ink-900/8 hover:border-terra/30 hover:shadow-[0_4px_16px_rgba(30,24,20,0.08)] transition-all">
+                      <div className={`w-9 h-9 rounded-full shrink-0 flex items-center justify-center border ${meta.badge}`}>
+                        <KindIcon size={15} />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-0.5 flex-wrap">
+                          <span className={`text-[0.6rem] font-semibold uppercase tracking-[0.08em] px-1.5 py-0.5 rounded-full border ${meta.badge}`}>{meta.label}</span>
+                          <span className="text-[0.6rem] text-ink-400 uppercase tracking-wide">{item.depth}</span>
+                        </div>
+                        <div className="text-sm font-semibold text-ink-900 mb-0.5">{item.title}</div>
+                        {item.blurb && <p className="text-ink-500 text-[0.82rem] leading-relaxed">{item.blurb}</p>}
+                      </div>
+                      <button
+                        onClick={() => handleGenerateFollowup(item)}
+                        disabled={!onGenerate}
+                        title="Generate this cast"
+                        className="shrink-0 self-center flex items-center gap-1.5 px-3.5 py-2 rounded-full bg-terra text-white text-[0.78rem] font-semibold hover:bg-terra-light active:scale-95 transition-all shadow-[0_2px_8px_rgba(191,86,48,0.20)] disabled:opacity-50"
+                      >
+                        <Sparkles size={13} /> Make
+                      </button>
+                    </div>
+                  );
+                })}
+                <p className="text-center text-[0.7rem] text-ink-400 mt-1">
+                  Generating a follow-up keeps this one playing and adds the new cast to your library.
+                </p>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Keyboard shortcuts overlay */}
+      {showShortcuts && (
+        <div className="fixed inset-0 z-[10001] flex items-center justify-center bg-ink-900/40 backdrop-blur-sm p-6" onClick={() => setShowShortcuts(false)}>
+          <div className="animate-entrance w-full max-w-[420px] rounded-2xl bg-cream-50 shadow-[0_20px_60px_rgba(30,24,20,0.25)] p-6" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-display font-semibold text-lg flex items-center gap-2"><Keyboard size={18} className="text-terra" /> Keyboard shortcuts</h3>
+              <button onClick={() => setShowShortcuts(false)} className="text-ink-400 hover:text-ink-900 transition-colors"><X size={18} /></button>
+            </div>
+            <div className="flex flex-col gap-2">
+              {SHORTCUTS.map((s) => (
+                <div key={s.label} className="flex items-center justify-between py-1">
+                  <span className="text-sm text-ink-500">{s.label}</span>
+                  <span className="flex gap-1">
+                    {s.keys.map((k) => (
+                      <kbd key={k} className="px-2 py-0.5 rounded-md bg-cream-200 border border-ink-900/10 text-ink-700 text-[0.72rem] font-mono shadow-[0_1px_0_rgba(30,24,20,0.12)]">{k}</kbd>
+                    ))}
                   </span>
-
-                  {isClip && ch.apple_podcasts_url && (
-                    <a href={ch.apple_podcasts_url} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()} title="Open original episode"
-                      className="text-ink-300 hover:text-terra shrink-0 transition-colors"
-                    >
-                      <ExternalLink size={11} />
-                    </a>
-                  )}
                 </div>
-              );
-            })}
+              ))}
+            </div>
           </div>
         </div>
-
-      </div>
+      )}
     </div>
   );
 }

@@ -1,45 +1,14 @@
 import React from 'react';
-
-const PALETTES = [
-  { bg: '#3D2B1F', shapes: ['#BF5630', '#D4915A', '#E8C9A0', '#6B4226'] },
-  { bg: '#1E3A2F', shapes: ['#3D7A5F', '#6AAF8B', '#A8D5BA', '#2C5446'] },
-  { bg: '#2D2438', shapes: ['#7A5C6A', '#A4899A', '#D4B5C7', '#5C3D52'] },
-  { bg: '#2A1F14', shapes: ['#8B7355', '#B89E6F', '#D4C49A', '#6B5535'] },
-  { bg: '#1A2A3A', shapes: ['#3C6E8C', '#6BA3C4', '#A0CCE0', '#2A5070'] },
-  { bg: '#3A1F1F', shapes: ['#8C4A3C', '#B86B5A', '#D4A090', '#6B3030'] },
-  { bg: '#2A2A1A', shapes: ['#5C6B4E', '#8B9E60', '#B8C87A', '#3D4A30'] },
-  { bg: '#2E1A28', shapes: ['#9E7462', '#C49E80', '#DFC4A8', '#7A4E5A'] },
-];
-
-function hashString(str) {
-  let hash = 0;
-  for (let i = 0; i < str.length; i++) {
-    hash = ((hash << 5) - hash + str.charCodeAt(i)) | 0;
-  }
-  return Math.abs(hash);
-}
-
-function seededRandom(seed) {
-  const x = Math.sin(seed) * 10000;
-  return x - Math.floor(x);
-}
+import { paletteFor, shapesFor } from '../lib/artwork';
 
 export default function TopicArtwork({ topic, title, size = 120, isPlaying = false }) {
-  const hash = hashString(topic || '');
-  const palette = PALETTES[hash % PALETTES.length];
+  const { hash, palette } = paletteFor(topic);
   const borderRadius = size >= 100 ? 14 : size >= 60 ? 12 : 10;
 
-  const shapes = [];
-  for (let i = 0; i < 7; i++) {
-    const r = seededRandom(hash + i * 137);
-    const r2 = seededRandom(hash + i * 251);
-    const r3 = seededRandom(hash + i * 397);
-    const cx = r * 120;
-    const cy = r2 * 120;
-    const radius = 15 + r3 * 45;
-    const color = palette.shapes[i % palette.shapes.length];
-    shapes.push({ cx, cy, radius, color, opacity: 0.3 + r3 * 0.4 });
-  }
+  const shapes = shapesFor(hash).map((s) => ({
+    ...s,
+    color: palette.shapes[s.idx % palette.shapes.length],
+  }));
 
   const displayText = title || topic || '';
   const monogram = displayText.trim().charAt(0).toUpperCase();

@@ -10,6 +10,15 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from services import transcript_cache
 
 
+def _clean_text(text: Optional[str]) -> str:
+    """Strip HTML tags and collapse whitespace from an RSS description blob."""
+    if not text:
+        return ""
+    text = re.sub(r"<[^>]+>", " ", text)
+    text = re.sub(r"&[a-zA-Z#0-9]+;", " ", text)
+    return re.sub(r"\s+", " ", text).strip()
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # 1. PODCAST SEARCH  (iTunes Search API — completely free, no auth)
 # ─────────────────────────────────────────────────────────────────────────────
@@ -59,6 +68,9 @@ def get_best_episode(feed_url: str, topic_hint: str = "", episode_title_hint: st
             channel_link = link_el.text
             break
 
+    itunes_summary_tag = "{http://www.itunes.com/dtds/podcast-1.0.dtd}summary"
+    itunes_subtitle_tag = "{http://www.itunes.com/dtds/podcast-1.0.dtd}subtitle"
+
     for item in root.iter("item"):
         title_el = item.find("title")
         enclosure_el = item.find("enclosure")
@@ -74,11 +86,19 @@ def get_best_episode(feed_url: str, topic_hint: str = "", episode_title_hint: st
         title = title_el.text.strip() if title_el is not None and title_el.text else ""
         ep_link = link_el.text.strip() if link_el is not None and link_el.text else channel_link
         guid = guid_el.text.strip() if guid_el is not None and guid_el.text else ""
+
+        # Episode summary helps the LLM pick on CONTENT, not just the title.
+        desc_el = (item.find("description")
+                   or item.find(itunes_summary_tag)
+                   or item.find(itunes_subtitle_tag))
+        description = _clean_text(desc_el.text) if desc_el is not None and desc_el.text else ""
+
         episodes.append({
             "title": title,
             "mp3_url": mp3_url,
             "apple_podcasts_url": ep_link,
             "guid": guid,
+            "description": description,
         })
 
     if not episodes:
@@ -109,18 +129,25 @@ def get_best_episode(feed_url: str, topic_hint: str = "", episode_title_hint: st
 
 
 def _llm_pick_episode(episodes: list, topic: str, episode_hint: str) -> Optional[dict]:
-    """Ask GPT-4o-mini to pick the single best episode from a list of titles."""
+    """Ask GPT-4o-mini to pick the single best episode using titles + summaries."""
     from openai import OpenAI
     client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
 
-    titles = [f"{i}: {ep['title']}" for i, ep in enumerate(episodes)]
-    titles_block = "\n".join(titles)
+    lines = []
+    for i, ep in enumerate(episodes):
+        desc = (ep.get("description") or "").strip()
+        if desc:
+            lines.append(f"{i}: {ep['title']}\n    summary: {desc[:280]}")
+        else:
+            lines.append(f"{i}: {ep['title']}")
+    titles_block = "\n".join(lines)
 
     response = client.chat.completions.create(
         model="gpt-4o-mini",
         messages=[
             {"role": "system", "content": "You pick podcast episodes. Return only valid JSON."},
             {"role": "user", "content": f"""Pick the ONE episode most relevant to the topic below.
+Judge by the episode SUMMARY when present — titles can be vague or clickbait.
 
 Topic: {topic}
 Episode hint: {episode_hint}
@@ -176,20 +203,35 @@ def download_podcast_episode(mp3_url: str, output_path: str) -> str:
 # 4. TRIM  (keep first N minutes for Whisper's 25 MB limit)
 # ─────────────────────────────────────────────────────────────────────────────
 
+def _safe_bitrate_kbps(max_minutes: int, target_mb: float = 24.0, cap: int = 64, floor: int = 32) -> int:
+    """
+    Pick the highest mono bitrate that keeps `max_minutes` of audio under
+    `target_mb` (with margin below Whisper's hard 25 MB limit). Longer windows
+    automatically drop to a lower bitrate so we can transcribe deeper into an
+    episode without splitting the file.
+    """
+    seconds = max(1, max_minutes * 60)
+    kbps = int((target_mb * 1024 * 1024 * 8) / (1000 * seconds))
+    return max(floor, min(cap, kbps))
+
+
 def trim_audio(input_path: str, max_minutes: int = 45) -> str:
-    """Trims a podcast MP3 to max_minutes and re-encodes to 64kbps mono.
-    At 64kbps mono, 45 min ≈ 21MB — well under Whisper's 25MB limit.
+    """Trim a podcast MP3 to `max_minutes` of mono audio at a Whisper-safe bitrate.
+
+    The bitrate is chosen so the result stays under Whisper's 25 MB limit even
+    for longer windows (e.g. deep-dives transcribe ~70 min by dropping to ~48k).
     """
     import subprocess
+    bitrate = _safe_bitrate_kbps(max_minutes)
     output_path = input_path.replace(".mp3", "_trim.mp3")
     if os.path.exists(output_path):
         os.remove(output_path)
     subprocess.run(
         ["ffmpeg", "-y", "-i", input_path, "-t", str(max_minutes * 60),
-         "-ac", "1", "-ab", "64k", output_path],
+         "-ac", "1", "-ab", f"{bitrate}k", output_path],
         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True,
     )
-    print(f"  Trimmed to {max_minutes}min → {output_path}")
+    print(f"  Trimmed to {max_minutes}min @ {bitrate}k → {output_path}")
     return output_path
 
 
@@ -227,7 +269,7 @@ def transcribe_audio(audio_path: str) -> str:
 # 6. PARALLEL MULTI-SOURCE PIPELINE
 # ─────────────────────────────────────────────────────────────────────────────
 
-def process_source(source: dict, job_dir: str, user_topic: str = "") -> Optional[dict]:
+def process_source(source: dict, job_dir: str, user_topic: str = "", window_minutes: int = 45) -> Optional[dict]:
     """
     Full pipeline for a single source: find podcast → find episode → download → trim → transcribe.
     Returns the source dict enriched with: transcript, resolved_episode_title, audio_path, apple_podcasts_url
@@ -236,17 +278,33 @@ def process_source(source: dict, job_dir: str, user_topic: str = "") -> Optional
     episode_hint = source.get("episode_title_hint", "")
     topic_hint   = user_topic or source.get("unique_angle", podcast_name)
 
-    print(f"\n[{podcast_name}] Searching iTunes...")
     try:
-        podcasts = search_podcast(podcast_name, limit=3)
-        if not podcasts:
-            print(f"[{podcast_name}] Not found on iTunes — skipping.")
-            return None
-        podcast = podcasts[0]
+        if source.get("mp3_url"):
+            # Grounded candidate: the episode (and its MP3) is already resolved by
+            # topic-level iTunes episode search — skip show search + feed parsing.
+            podcast = {
+                "feed_url": "",
+                "apple_podcasts_url": source.get("apple_podcasts_url", ""),
+            }
+            episode = {
+                "title": source.get("resolved_episode_title") or episode_hint or podcast_name,
+                "mp3_url": source["mp3_url"],
+                "apple_podcasts_url": source.get("apple_podcasts_url", ""),
+                "guid": source.get("guid") or source["mp3_url"],
+                "description": source.get("description", ""),
+            }
+            print(f"\n[{podcast_name}] Grounded episode: {episode['title']}")
+        else:
+            print(f"\n[{podcast_name}] Searching iTunes...")
+            podcasts = search_podcast(podcast_name, limit=3)
+            if not podcasts:
+                print(f"[{podcast_name}] Not found on iTunes — skipping.")
+                return None
+            podcast = podcasts[0]
 
-        print(f"[{podcast_name}] Found feed. Selecting episode matching: '{episode_hint}'")
-        episode = get_best_episode(podcast["feed_url"], topic_hint=topic_hint, episode_title_hint=episode_hint)
-        print(f"[{podcast_name}] Episode: {episode['title']}")
+            print(f"[{podcast_name}] Found feed. Selecting episode matching: '{episode_hint}'")
+            episode = get_best_episode(podcast["feed_url"], topic_hint=topic_hint, episode_title_hint=episode_hint)
+            print(f"[{podcast_name}] Episode: {episode['title']}")
 
         # ── Cache lookup ──────────────────────────────────────────────────────
         # Keyed on RSS GUID (canonical) with mp3_url as fallback. A hit skips
@@ -269,7 +327,7 @@ def process_source(source: dict, job_dir: str, user_topic: str = "") -> Optional
         trim_path = raw_path.replace(".mp3", "_trim.mp3")  # Huberman_Lab_raw_trim.mp3
 
         download_podcast_episode(episode["mp3_url"], raw_path)
-        trim_audio(raw_path, max_minutes=45)
+        trim_audio(raw_path, max_minutes=window_minutes)
         # Free disk: raw file is no longer needed after trimming
         if os.path.exists(raw_path):
             os.remove(raw_path)
@@ -298,14 +356,42 @@ def process_source(source: dict, job_dir: str, user_topic: str = "") -> Optional
         return None
 
 
-def process_sources_parallel(sources: List[dict], job_dir: str, user_topic: str = "") -> List[dict]:
-    """Process multiple podcast sources in parallel (IO-bound, so threads are ideal)."""
-    results = []
-    max_workers = min(len(sources), 2)  # cap at 2 to limit memory on Railway
-    with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        futures = {executor.submit(process_source, s, job_dir, user_topic): s for s in sources}
-        for future in as_completed(futures):
-            result = future.result()
-            if result:
-                results.append(result)
-    return results
+def process_sources_parallel(
+    sources: List[dict],
+    job_dir: str,
+    user_topic: str = "",
+    target: Optional[int] = None,
+    window_minutes: int = 45,
+    max_workers: int = 2,
+) -> List[dict]:
+    """
+    Process podcast sources in parallel, in waves, until `target` successes are
+    reached or the candidate pool is exhausted.
+
+    `sources` should be an over-provisioned, ranked candidate list. We only spend
+    Whisper credits on the extras when an earlier source fails (dead feed, failed
+    download, etc.) — so a single broken source no longer yields a thin result.
+    """
+    target = target or len(sources)
+    results: List[dict] = []
+    queue = list(sources)
+    cursor = 0
+
+    while len(results) < target and cursor < len(queue):
+        need = target - len(results)
+        batch = queue[cursor:cursor + need]
+        cursor += len(batch)
+        workers = max(1, min(len(batch), max_workers))
+        with ThreadPoolExecutor(max_workers=workers) as executor:
+            futures = {
+                executor.submit(process_source, s, job_dir, user_topic, window_minutes): s
+                for s in batch
+            }
+            for future in as_completed(futures):
+                result = future.result()
+                if result:
+                    results.append(result)
+        if len(results) < target and cursor < len(queue):
+            print(f"  Backfilling: {len(results)}/{target} sources ready, trying more candidates…")
+
+    return results[:target]

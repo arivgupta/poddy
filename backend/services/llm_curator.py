@@ -1,5 +1,6 @@
 from typing import List, Dict, Optional, Any, Tuple
 import os
+import re
 import json
 from openai import OpenAI
 
@@ -11,7 +12,11 @@ def _client() -> OpenAI:
     api_key = os.environ.get("OPENAI_API_KEY")
     if not api_key:
         raise ValueError("OPENAI_API_KEY is not set.")
-    return OpenAI(api_key=api_key)
+    # Deep dives fan out several gpt-4o calls over large transcripts and can
+    # momentarily exceed the org's tokens-per-minute limit (HTTP 429). The SDK
+    # honors Retry-After / x-ratelimit-reset headers, so give it enough retries
+    # to ride out a rolling-window TPM cap instead of failing the whole job.
+    return OpenAI(api_key=api_key, max_retries=6, timeout=120.0)
 
 
 def _parse_json(text: str) -> Any:
@@ -20,6 +25,89 @@ def _parse_json(text: str) -> Any:
     if text.startswith("```"):
         text = text.split("\n", 1)[1].rsplit("```", 1)[0]
     return json.loads(text)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Clip boundary snapping
+#
+# The LLM picks start/end times by reading transcript text, so its numbers can
+# land mid-word or drift from reality. We snap each clip to the nearest Whisper
+# segment boundaries (which fall on natural pauses), clamp to the transcript's
+# real extent, and enforce sane min/max durations — eliminating mid-sentence
+# cuts and hallucinated timestamps.
+# ─────────────────────────────────────────────────────────────────────────────
+
+_SEG_RE = re.compile(r"^\s*([\d.]+)s\s*-\s*([\d.]+)s\s*:")
+
+
+def parse_transcript_segments(transcript: str) -> List[Tuple[float, float]]:
+    """Parse '12.3s - 16.7s: text' lines into sorted (start, end) tuples."""
+    segs: List[Tuple[float, float]] = []
+    for line in (transcript or "").splitlines():
+        m = _SEG_RE.match(line)
+        if not m:
+            continue
+        try:
+            start, end = float(m.group(1)), float(m.group(2))
+        except ValueError:
+            continue
+        if end > start:
+            segs.append((start, end))
+    segs.sort()
+    return segs
+
+
+def snap_clip_to_segments(
+    start: float,
+    end: float,
+    segments: List[Tuple[float, float]],
+    min_s: float = 45.0,
+    max_s: float = 420.0,
+) -> Optional[Tuple[float, float]]:
+    """
+    Snap a requested [start, end] window to Whisper segment boundaries.
+    Returns a cleaned (start, end) or None if it can't form a valid clip.
+    """
+    if not segments:
+        # No segment data — just sanity-clamp the raw request.
+        if end - start <= 0:
+            return None
+        return (max(0.0, start), end)
+
+    seg_starts = [s for s, _ in segments]
+    seg_ends = [e for _, e in segments]
+    audio_end = seg_ends[-1]
+
+    snapped_start = min(seg_starts, key=lambda x: abs(x - start))
+    snapped_end = min(seg_ends, key=lambda x: abs(x - end))
+
+    # Ensure end is after start; if not, grow forward to satisfy the minimum.
+    if snapped_end <= snapped_start:
+        target = snapped_start + min_s
+        later = [e for e in seg_ends if e > snapped_start]
+        if not later:
+            return None
+        snapped_end = min(later, key=lambda x: abs(x - target))
+
+    # Enforce a minimum length by extending the end (don't move the start).
+    if snapped_end - snapped_start < min_s:
+        target = snapped_start + min_s
+        candidates = [e for e in seg_ends if e > snapped_start]
+        if candidates:
+            snapped_end = min(candidates, key=lambda x: abs(x - target))
+
+    # Enforce a maximum length by trimming the end to the nearest segment edge.
+    if snapped_end - snapped_start > max_s:
+        target = snapped_start + max_s
+        candidates = [e for e in seg_ends if snapped_start < e <= target] or \
+                     [e for e in seg_ends if e > snapped_start]
+        snapped_end = min(candidates, key=lambda x: abs(x - target))
+
+    snapped_start = max(0.0, snapped_start)
+    snapped_end = min(snapped_end, audio_end)
+    if snapped_end - snapped_start <= 0:
+        return None
+    return (round(snapped_start, 2), round(snapped_end, 2))
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -58,18 +146,21 @@ def generate_title(topic: str) -> str:
 # Stage 1 — Expert source discovery
 # ─────────────────────────────────────────────────────────────────────────────
 
-def curate_sources(topic: str, n_sources: int = 3) -> List[dict]:
+def curate_sources(topic: str, n_sources: int = 3, n_extra: int = 2) -> List[dict]:
     """
     Ask GPT-4o to recommend the best podcast episodes for a topic.
-    n_sources controls how many distinct podcast sources to pull from.
+    n_sources controls how many distinct podcast sources we ultimately want;
+    n_extra adds ranked backup candidates so the pipeline can backfill when a
+    feed is dead or a download fails.
 
-    Returns list of { podcast_name, episode_title_hint, unique_angle }
+    Returns a ranked list of { podcast_name, episode_title_hint, unique_angle }.
     """
+    total = n_sources + max(0, n_extra)
 
     prompt = f"""You are a world-class podcast research librarian with encyclopedic knowledge of every major English-language podcast ever recorded.
 
 The user wants to deeply learn about: "{topic}"
-Number of sources needed: {n_sources}
+Number of sources needed: {total} (ranked best-first; we will use the top {n_sources} and keep the rest as backups)
 
 Your job is to identify the single best podcast episodes that cover this topic with maximum credibility, depth, and unique insight. Think of the episodes that would come up if you asked the world's best experts "what is the definitive audio resource on {topic}?"
 
@@ -171,15 +262,29 @@ Return ONLY valid JSON:
         temperature=0.2,
     )
     data = json.loads(response.choices[0].message.content)
-    clips = data.get("clips", [])
+    raw_clips = data.get("clips", [])
 
-    # Attach source info to each clip
-    for clip in clips:
+    # Snap every clip to real Whisper segment boundaries so we never cut a word
+    # in half and never trust a hallucinated timestamp.
+    segments = parse_transcript_segments(transcript)
+    clips = []
+    for clip in raw_clips:
+        try:
+            start = float(clip.get("start_time", 0))
+            end = float(clip.get("end_time", 0))
+        except (TypeError, ValueError):
+            continue
+        snapped = snap_clip_to_segments(start, end, segments)
+        if snapped is None:
+            print(f"  Dropping unusable clip ({start}-{end}s) from {source_info.get('podcast_name')}")
+            continue
+        clip["start_time"], clip["end_time"] = snapped
         clip["podcast_name"] = source_info.get("podcast_name", "Unknown")
         clip["episode_title"] = source_info.get("resolved_episode_title", source_info.get("episode_title_hint", ""))
         clip["apple_podcasts_url"] = source_info.get("apple_podcasts_url", "")
+        clips.append(clip)
 
-    print(f"  Extracted {len(clips)} clips from {source_info.get('podcast_name')}")
+    print(f"  Extracted {len(clips)} usable clips from {source_info.get('podcast_name')} ({len(raw_clips)} proposed)")
     return clips
 
 
@@ -187,11 +292,40 @@ Return ONLY valid JSON:
 # Stage 4 — Cross-source ordering, de-duplication, duration targeting
 # ─────────────────────────────────────────────────────────────────────────────
 
+def _clips_by_source(all_clips: List[dict]) -> Dict[str, List[int]]:
+    """Map each podcast source to its clip indices, best-quality first."""
+    by_source: Dict[str, List[int]] = {}
+    for i, clip in enumerate(all_clips):
+        by_source.setdefault(clip.get("podcast_name", "?"), []).append(i)
+    for idxs in by_source.values():
+        idxs.sort(key=lambda j: all_clips[j].get("quality_score", 5), reverse=True)
+    return by_source
+
+
+def _balanced_round_robin(all_clips: List[dict]) -> List[int]:
+    """Interleave clips across sources (best-first within each) so every source
+    is represented even when the LLM ordering fails or is degenerate."""
+    by_source = _clips_by_source(all_clips)
+    queues = list(by_source.values())
+    order: List[int] = []
+    while any(queues):
+        for q in queues:
+            if q:
+                order.append(q.pop(0))
+    return order
+
+
 def order_and_deduplicate(topic: str, all_clips: List[dict]) -> List[dict]:
     """
     Given clips from multiple sources, produce a final ordered playlist.
-    Removes semantic duplicates, reorders pedagogically — keeps everything else.
+    Removes semantic duplicates and reorders pedagogically — but GUARANTEES that
+    every source that contributed usable clips is represented in the final cut.
+    (A multi-source documentary that collapses to a single show defeats the whole
+    premise, and gpt-4o-mini's dedup pass will sometimes do exactly that.)
     """
+    if not all_clips:
+        return []
+
     clip_summaries = []
     for i, clip in enumerate(all_clips):
         duration = round(clip["end_time"] - clip["start_time"])
@@ -204,12 +338,16 @@ def order_and_deduplicate(topic: str, all_clips: List[dict]) -> List[dict]:
             "quality_score": clip.get("quality_score", 5),
         })
 
+    by_source = _clips_by_source(all_clips)
+    n_sources = len(by_source)
+
     prompt = f"""You are the chief editor of a premium audio documentary on: "{topic}"
 
-Below are candidate clips from multiple podcast sources. Your job:
+Below are candidate clips from {n_sources} DIFFERENT podcast sources. Your job:
 1. REMOVE semantic duplicates — if two clips explain the same concept, keep only the highest-quality one
 2. ORDER the remaining clips like a university lecture: foundations → mechanisms → practical protocols → nuance/edge cases
 3. KEEP all non-duplicate clips — do NOT cut based on time, keep everything that adds value
+4. PRESERVE SOURCE DIVERSITY — the final cut MUST include clips from EVERY one of the {n_sources} sources (multiple perspectives are the point). Never collapse the documentary down to a single show.
 
 CANDIDATE CLIPS:
 {json.dumps(clip_summaries, indent=2)}
@@ -220,26 +358,146 @@ Return ONLY valid JSON:
   "reasoning": "Brief explanation of curriculum structure"
 }}"""
 
-    response = _client().chat.completions.create(
-        model="gpt-4o-mini",
-        messages=[
-            {"role": "system", "content": "You are a curriculum designer. Output only valid JSON."},
-            {"role": "user", "content": prompt}
-        ],
-        response_format={"type": "json_object"},
-        temperature=0.2,
-    )
-    data = json.loads(response.choices[0].message.content)
-    ordered_indices = data.get("ordered_indices", list(range(len(all_clips))))
-    print(f"Curriculum order: {ordered_indices}")
-    print(f"Reasoning: {data.get('reasoning', '')}")
+    ordered_indices: List[int] = []
+    try:
+        response = _client().chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": "You are a curriculum designer. Output only valid JSON."},
+                {"role": "user", "content": prompt}
+            ],
+            response_format={"type": "json_object"},
+            temperature=0.2,
+        )
+        data = json.loads(response.choices[0].message.content)
+        raw = data.get("ordered_indices", [])
+        print(f"Curriculum order (LLM): {raw}")
+        print(f"Reasoning: {data.get('reasoning', '')}")
+        seen = set()
+        for i in raw:
+            if isinstance(i, int) and 0 <= i < len(all_clips) and i not in seen:
+                seen.add(i)
+                ordered_indices.append(i)
+    except Exception as e:
+        print(f"  Ordering LLM failed ({e}); using balanced round-robin")
 
+    # Degenerate result (empty, or so aggressive it dropped almost everything):
+    # fall back to a source-balanced ordering of all clips.
+    if len(ordered_indices) < min(len(all_clips), max(2, n_sources)):
+        print(f"  Ordering kept only {len(ordered_indices)} clips from {n_sources} sources — "
+              f"rebuilding a source-balanced cut")
+        ordered_indices = _balanced_round_robin(all_clips)
+
+    # Diversity guarantee: re-insert the best clip from any source the LLM dropped
+    # entirely, so the documentary always reflects every show it ingested.
+    represented = {all_clips[i].get("podcast_name", "?") for i in ordered_indices}
+    for src, idxs in by_source.items():
+        if src not in represented and idxs:
+            best = idxs[0]  # already sorted best-first
+            ordered_indices.append(best)
+            represented.add(src)
+            print(f"  Re-added best clip from dropped source: {src}")
+
+    print(f"Final order: {ordered_indices}  (sources: {sorted(represented)})")
     return [all_clips[i] for i in ordered_indices if i < len(all_clips)]
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Stage 5 — Write transition narrations for each clip
 # ─────────────────────────────────────────────────────────────────────────────
+
+def suggest_followups(
+    topic: str,
+    title: str,
+    chapters: List[dict],
+    focus_index: Optional[int] = None,
+) -> List[dict]:
+    """
+    Turn a finished cast into the next steps of a personal learning path.
+
+    Given what the listener just heard (topic + chapter titles/summaries + which
+    chapter, if any, they want to dig into), propose follow-up casts they can
+    generate with one tap. Each suggestion is a ready-to-synthesize topic plus a
+    pedagogical "kind":
+      - deeper       : zoom into one idea they loved and go further
+      - broaden      : "more like this" — adjacent angles on the same theme
+      - next         : the next rung up a learning progression
+      - foundations  : the prerequisite that makes everything click
+    """
+    clip_lines = []
+    for i, ch in enumerate(chapters or []):
+        if ch.get("type") != "clip":
+            continue
+        marker = "  <-- focus" if focus_index is not None and i == focus_index else ""
+        title_txt = ch.get("title", "")
+        summary = (ch.get("summary") or "").strip()
+        src = ch.get("source_podcast") or ""
+        clip_lines.append(f"- \"{title_txt}\"{(' — ' + summary) if summary else ''}{(' ['+src+']') if src else ''}{marker}")
+    chapters_block = "\n".join(clip_lines) if clip_lines else "(no chapter detail available)"
+
+    focus_hint = ""
+    if focus_index is not None and 0 <= focus_index < len(chapters or []):
+        fc = chapters[focus_index]
+        focus_hint = (
+            f"\nThe listener specifically wants MORE on this part: "
+            f"\"{fc.get('title','')}\" — {(fc.get('summary') or fc.get('text') or '').strip()}\n"
+        )
+
+    prompt = f"""You are a master learning designer helping someone go from a single great listen to a real, self-directed learning path.
+
+They just finished an audio documentary:
+  Title: {title or topic}
+  Topic: {topic}
+
+It contained these segments:
+{chapters_block}
+{focus_hint}
+Propose 4 follow-up "casts" they can generate next, each a NATURAL next move in learning this material deeply. Use these kinds (one each, in this order):
+  1. "deeper"      — zoom into the single most compelling idea here (or the focus part, if marked) and go much further on the mechanism/evidence.
+  2. "broaden"     — "more like this": an adjacent angle or application on the same theme they'd love.
+  3. "next"        — the logical NEXT step up the learning ladder once this is understood.
+  4. "foundations" — the prerequisite concept that makes all of this click (great if they want it to really stick).
+
+For each, write:
+  - "title": a punchy 3-6 word episode title
+  - "topic": a clear, specific topic/prompt to feed the generator (a full phrase a person would type, grounded in the actual content above — not generic)
+  - "blurb": one sentence on what they'll get and why it's the right next step
+  - "depth": one of "quick", "standard", "deep" (use "deep" only for genuinely broad next steps)
+
+Return ONLY valid JSON:
+{{"suggestions": [{{"kind": "deeper", "title": "...", "topic": "...", "blurb": "...", "depth": "standard"}}]}}"""
+
+    try:
+        response = _client().chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": "You design learning paths. Output only valid JSON."},
+                {"role": "user", "content": prompt},
+            ],
+            response_format={"type": "json_object"},
+            temperature=0.6,
+        )
+        data = json.loads(response.choices[0].message.content)
+    except Exception as e:
+        print(f"  Follow-up suggestion failed: {e}")
+        return []
+
+    valid_kinds = {"deeper", "broaden", "next", "foundations"}
+    valid_depths = {"quick", "standard", "deep"}
+    out = []
+    for s in data.get("suggestions", []):
+        t = (s.get("topic") or "").strip()
+        if not t:
+            continue
+        out.append({
+            "kind": s.get("kind") if s.get("kind") in valid_kinds else "next",
+            "title": (s.get("title") or t)[:80],
+            "topic": t,
+            "blurb": (s.get("blurb") or "").strip(),
+            "depth": s.get("depth") if s.get("depth") in valid_depths else "standard",
+        })
+    return out[:4]
+
 
 def write_transitions_batch(topic: str, ordered_clips: List[dict]) -> List[dict]:
     """

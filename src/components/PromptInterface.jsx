@@ -116,11 +116,14 @@ export default function PromptInterface({ onSynthesize }) {
           { icon: Headphones, label: 'Real podcast clips' },
           { icon: Sparkles,   label: 'AI narration' },
           { icon: BookOpen,   label: 'Smart ordering' },
-        ].map(({ icon: Icon, label }) => (
-          <div key={label} className="flex items-center gap-1.5 text-[0.72rem] font-medium">
-            <Icon size={12} className="text-terra/60" /> {label}
-          </div>
-        ))}
+        ].map((marker) => {
+          const Icon = marker.icon;
+          return (
+            <div key={marker.label} className="flex items-center gap-1.5 text-[0.72rem] font-medium">
+              <Icon size={12} className="text-terra/60" /> {marker.label}
+            </div>
+          );
+        })}
       </div>
 
       {/* Suggestion chips */}

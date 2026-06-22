@@ -25,7 +25,9 @@ from services.llm_curator import (
     extract_clips_from_source,
     order_and_deduplicate,
     write_transitions_batch,
+    suggest_followups,
 )
+from services.discovery import discover_episode_candidates
 from services.audio_engine import stitch_multi_source
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -96,16 +98,31 @@ def health_check():
 # Request schema
 # ─────────────────────────────────────────────────────────────────────────────
 
-# Depth → (n_sources, n_clips_per_source)
+# Depth → tuning knobs.
+#   n_sources : distinct podcasts we want in the final piece
+#   n_clips   : clips extracted per source
+#   window    : minutes of each episode transcribed (deeper = look further in)
 DEPTH_CONFIG = {
-    "quick":    {"n_sources": 2, "n_clips": 4},
-    "standard": {"n_sources": 3, "n_clips": 6},
-    "deep":     {"n_sources": 5, "n_clips": 8},
+    "quick":    {"n_sources": 2, "n_clips": 4, "window": 35},
+    "standard": {"n_sources": 3, "n_clips": 6, "window": 45},
+    "deep":     {"n_sources": 5, "n_clips": 8, "window": 70},
 }
 
 class SynthesizeRequest(BaseModel):
     topic: str
     depth: str = "standard"   # quick | standard | deep
+
+
+class FollowupRequest(BaseModel):
+    """Context for turning a finished cast into next steps of a learning path.
+
+    The client passes the cast it has in its own library (server job state is
+    ephemeral/bounded), so follow-ups work for any saved cast — even old ones.
+    """
+    topic: str
+    title: str = ""
+    chapters: List[dict] = []
+    focus_index: Optional[int] = None
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -131,6 +148,7 @@ def run_pipeline(job_id: str, topic: str, depth: str):
     cfg = DEPTH_CONFIG.get(depth, DEPTH_CONFIG["standard"])
     n_sources = cfg["n_sources"]
     n_clips   = cfg["n_clips"]
+    window    = cfg["window"]
 
     def update(status: str, **kwargs):
         with _jobs_lock:
@@ -149,14 +167,23 @@ def run_pipeline(job_id: str, topic: str, depth: str):
             with _jobs_lock:
                 jobs[job_id]["title"] = topic
 
-        # ── Stage 1: AI source discovery ──────────────────────────────────────
+        # ── Stage 1: AI source discovery (over-provisioned for backfill) ──────
+        # Prefer topic-grounded discovery (real episodes from iTunes episode
+        # search, LLM-ranked for credibility + diversity). Fall back to the
+        # legacy recall path only if the grounded search comes up empty.
         update("discovering_sources")
-        sources = curate_sources(topic, n_sources=n_sources)
+        sources = discover_episode_candidates(topic, n_sources=n_sources, n_extra=max(3, n_sources))
+        if not sources:
+            print(f"[{job_id}] grounded discovery empty — falling back to recall")
+            sources = curate_sources(topic, n_sources=n_sources, n_extra=max(3, n_sources))
 
         # ── Stage 2: Parallel download + transcription ─────────────────────────
-        update("downloading_transcribing", sources_found=len(sources),
-               source_names=[s["podcast_name"] for s in sources])
-        enriched_sources = process_sources_parallel(sources, job_dir, user_topic=topic)
+        # Show only the primary picks to the user; extras are silent backups.
+        update("downloading_transcribing", sources_found=n_sources,
+               source_names=[s["podcast_name"] for s in sources[:n_sources]])
+        enriched_sources = process_sources_parallel(
+            sources, job_dir, user_topic=topic, target=n_sources, window_minutes=window,
+        )
 
         if not enriched_sources:
             raise RuntimeError("Could not download or transcribe any podcast sources.")
@@ -165,15 +192,25 @@ def run_pipeline(job_id: str, topic: str, depth: str):
         update("extracting_clips")
         all_clips = []
         for src in enriched_sources:
-            clips = extract_clips_from_source(
-                topic=topic,
-                transcript=src["transcript"],
-                source_info=src,
-                n_clips=n_clips,  # generous fixed count per source
-            )
+            # A single source failing (e.g. a transient rate limit even after
+            # retries) must not sink the whole documentary — skip it and keep
+            # the clips we did get from the other sources.
+            try:
+                clips = extract_clips_from_source(
+                    topic=topic,
+                    transcript=src["transcript"],
+                    source_info=src,
+                    n_clips=n_clips,  # generous fixed count per source
+                )
+            except Exception as e:
+                print(f"[{job_id}] clip extraction failed for {src.get('podcast_name')}: {e}")
+                continue
             for clip in clips:
                 clip["audio_path"] = src["audio_path"]
             all_clips.extend(clips)
+
+        if not all_clips:
+            raise RuntimeError("Could not extract any usable clips from the sources.")
 
         # ── Stage 4: Cross-source curriculum ordering (keeps all non-dupes) ───
         update("building_curriculum")
@@ -226,6 +263,23 @@ def synthesize(request: SynthesizeRequest):
     t.start()
 
     return {"job_id": job_id, "status": "queued"}
+
+
+@app.post("/suggest_followups")
+def suggest_followups_endpoint(request: FollowupRequest):
+    """
+    Given a cast the listener just enjoyed, return a few ready-to-generate
+    follow-up casts (deeper / broaden / next / foundations) so they can fork it
+    into a personal learning path. Each suggestion is a topic + suggested depth
+    the client can hand straight back to /synthesize.
+    """
+    suggestions = suggest_followups(
+        topic=request.topic,
+        title=request.title,
+        chapters=request.chapters,
+        focus_index=request.focus_index,
+    )
+    return {"suggestions": suggestions}
 
 
 @app.get("/jobs/{job_id}")
