@@ -25,6 +25,7 @@ from services.llm_curator import (
     extract_clips_from_source,
     order_and_deduplicate,
     write_transitions_batch,
+    suggest_followups,
 )
 from services.discovery import discover_episode_candidates
 from services.audio_engine import stitch_multi_source
@@ -110,6 +111,18 @@ DEPTH_CONFIG = {
 class SynthesizeRequest(BaseModel):
     topic: str
     depth: str = "standard"   # quick | standard | deep
+
+
+class FollowupRequest(BaseModel):
+    """Context for turning a finished cast into next steps of a learning path.
+
+    The client passes the cast it has in its own library (server job state is
+    ephemeral/bounded), so follow-ups work for any saved cast — even old ones.
+    """
+    topic: str
+    title: str = ""
+    chapters: List[dict] = []
+    focus_index: Optional[int] = None
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -250,6 +263,23 @@ def synthesize(request: SynthesizeRequest):
     t.start()
 
     return {"job_id": job_id, "status": "queued"}
+
+
+@app.post("/suggest_followups")
+def suggest_followups_endpoint(request: FollowupRequest):
+    """
+    Given a cast the listener just enjoyed, return a few ready-to-generate
+    follow-up casts (deeper / broaden / next / foundations) so they can fork it
+    into a personal learning path. Each suggestion is a topic + suggested depth
+    the client can hand straight back to /synthesize.
+    """
+    suggestions = suggest_followups(
+        topic=request.topic,
+        title=request.title,
+        chapters=request.chapters,
+        focus_index=request.focus_index,
+    )
+    return {"suggestions": suggestions}
 
 
 @app.get("/jobs/{job_id}")

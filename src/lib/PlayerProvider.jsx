@@ -122,6 +122,8 @@ export function PlayerProvider({ resolveAudioUrl, children }) {
       sourcesUsed: entry.sourcesUsed || [],
       durationMs: entry.durationMs || 0,
       audioUrl: url,
+      parentTitle: entry.parentTitle || null,
+      rootTopic: entry.rootTopic || entry.topic,
     });
     setCurrentMs(0);
     setTotalMs(entry.durationMs || 0);

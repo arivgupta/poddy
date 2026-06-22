@@ -54,6 +54,7 @@ function AppShell() {
 
   const pollRef = useRef(null);
   const cancelledRef = useRef(false);
+  const lineageRef = useRef(null);
   const libraryRef = useRef(library);
   useEffect(() => { libraryRef.current = library; }, [library]);
 
@@ -109,7 +110,7 @@ function AppShell() {
             }
           } catch (e) { console.error('Failed to cache audio locally:', e); }
 
-          const entry = { jobId: id, topic: data.topic || topic, title: genTitle, chapters, sourcesUsed, durationMs, savedAt: Date.now() };
+          const entry = { jobId: id, topic: data.topic || topic, title: genTitle, chapters, sourcesUsed, durationMs, savedAt: Date.now(), ...(lineageRef.current || {}) };
           addToLibrary(entry);
 
           const queue = [entry, ...orderedQueue(libraryRef.current.filter(e => e.jobId !== id))];
@@ -129,7 +130,8 @@ function AppShell() {
     }, 2000);
   }, [topic, addToLibrary, stopPolling, player]);
 
-  const handleSynthesize = async (query, selectedDepth) => {
+  const handleSynthesize = async (query, selectedDepth, lineage = null) => {
+    lineageRef.current = lineage;
     setTopic(query);
     setTitle('');
     setDepth(selectedDepth);
@@ -236,7 +238,7 @@ function AppShell() {
         {appState === 'loading' && (
           <CuratorLoadingState topic={topic} title={title} status={loadingStatus} sourceNames={sourceNames} onCancel={handleCancel} depth={depth} />
         )}
-        {appState === 'player'  && <SynthPlayer onBack={handleNavHome} />}
+        {appState === 'player'  && <SynthPlayer onBack={handleNavHome} onGenerate={handleSynthesize} />}
         {appState === 'library' && (
           <Library entries={library} onPlay={handlePlayLibraryEntry} onDelete={deleteFromLibrary} onNewCast={() => setAppState('prompt')} />
         )}

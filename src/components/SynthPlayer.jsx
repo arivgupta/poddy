@@ -3,6 +3,7 @@ import {
   Play, Pause, ChevronLeft, Download, ExternalLink, Sparkles, Radio,
   Volume2, Volume1, VolumeX, ChevronFirst, ChevronLast, Moon, Keyboard,
   AlignLeft, List, Copy, Check, Share2, Rewind, FastForward, X, ListVideo,
+  Compass, GraduationCap, ArrowRight, CornerDownRight, Layers,
 } from 'lucide-react';
 import TopicArtwork from './TopicArtwork';
 import RetroRadioTicker from './RetroRadioTicker';
@@ -36,7 +37,14 @@ const SHORTCUTS = [
   { keys: ['?'],          label: 'Toggle shortcuts' },
 ];
 
-export default function SynthPlayer({ onBack }) {
+const FOLLOWUP_KINDS = {
+  deeper:      { label: 'Go deeper',   icon: Compass,        color: 'text-terra',  badge: 'bg-terra/8 border-terra/20 text-terra-dark' },
+  broaden:     { label: 'More like this', icon: Layers,      color: 'text-sage',   badge: 'bg-sage/10 border-sage/20 text-sage' },
+  next:        { label: 'Next step',   icon: ArrowRight,     color: 'text-dusty',  badge: 'bg-dusty/10 border-dusty/20 text-dusty' },
+  foundations: { label: 'Foundations', icon: GraduationCap,  color: 'text-ink-500', badge: 'bg-cream-300 border-ink-900/10 text-ink-700' },
+};
+
+export default function SynthPlayer({ onBack, onGenerate }) {
   const player = usePlayer();
   const {
     track, isPlaying, currentMs, totalMs, activeChapterIdx, chapters,
@@ -50,6 +58,7 @@ export default function SynthPlayer({ onBack }) {
   const [isDragging, setIsDragging]       = useState(false);
   const [showShortcuts, setShowShortcuts] = useState(false);
   const [copied, setCopied]               = useState(false);
+  const [followups, setFollowups]         = useState({ status: 'idle', items: [], focus: null });
 
   const progressRef = useRef(null);
   const chapterRefs = useRef([]);
@@ -110,6 +119,43 @@ export default function SynthPlayer({ onBack }) {
     if (el) el.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
   }, [activeChapterIdx, view]);
 
+  // ── Learning path: AI-suggested follow-up casts ────────────────────────────
+  const fetchFollowups = useCallback(async (focusIdx = null) => {
+    setFollowups({ status: 'loading', items: [], focus: focusIdx });
+    try {
+      const res = await fetch(`${BACKEND}/suggest_followups`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ topic, title, chapters, focus_index: focusIdx }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const data = await res.json();
+      setFollowups({ status: 'ready', items: data.suggestions || [], focus: focusIdx });
+    } catch (e) {
+      console.error('Follow-up fetch failed:', e);
+      setFollowups({ status: 'error', items: [], focus: focusIdx });
+    }
+  }, [topic, title, chapters]);
+
+  // Fetch suggestions the first time the listener opens the Learning Path tab.
+  useEffect(() => {
+    if (view === 'path' && followups.status === 'idle') fetchFollowups(null);
+  }, [view, followups.status, fetchFollowups]);
+
+  const goDeeper = useCallback((idx) => {
+    setView('path');
+    fetchFollowups(idx);
+  }, [fetchFollowups]);
+
+  const handleGenerateFollowup = useCallback((item) => {
+    if (!onGenerate) return;
+    onGenerate(item.topic, item.depth || 'standard', {
+      parentJobId: jobId,
+      parentTitle: title || topic,
+      rootTopic: track?.rootTopic || topic,
+    });
+  }, [onGenerate, jobId, title, topic, track]);
+
   // ── Export / share ─────────────────────────────────────────────────────────
   const handleDownload = () => {
     if (audioUrl && audioUrl.startsWith('blob:')) {
@@ -161,8 +207,15 @@ export default function SynthPlayer({ onBack }) {
         <div className="bg-warm-dark px-8 py-8 flex gap-6 items-center flex-wrap">
           <TopicArtwork topic={topic} title={title} size={140} isPlaying={isPlaying} />
           <div className="flex-1 min-w-[200px]">
-            <div className="inline-block px-2.5 py-0.5 rounded-full bg-white/10 text-cream-400/80 text-[0.68rem] font-semibold tracking-[0.08em] uppercase mb-3 border border-white/6">
-              Poddy
+            <div className="flex flex-wrap items-center gap-2 mb-3">
+              <span className="inline-block px-2.5 py-0.5 rounded-full bg-white/10 text-cream-400/80 text-[0.68rem] font-semibold tracking-[0.08em] uppercase border border-white/6">
+                Poddy
+              </span>
+              {track?.parentTitle && (
+                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-terra/20 text-cream-50/90 text-[0.68rem] font-medium border border-terra/30" title={`Part of your learning path, continuing from "${track.parentTitle}"`}>
+                  <CornerDownRight size={11} /> Continuing from {track.parentTitle.length > 32 ? track.parentTitle.slice(0, 32) + '…' : track.parentTitle}
+                </span>
+              )}
             </div>
             <h2 className="font-display font-semibold text-[1.75rem] leading-tight text-cream-50 mb-1">{title || topic}</h2>
             {title && title !== topic && <p className="text-cream-400/60 text-sm mb-2">{topic}</p>}
@@ -285,6 +338,9 @@ export default function SynthPlayer({ onBack }) {
             <button onClick={() => setView('notes')} className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-[0.78rem] font-semibold transition-all ${view === 'notes' ? 'bg-cream-50 text-terra-dark shadow-sm' : 'text-ink-400 hover:text-ink-900'}`}>
               <AlignLeft size={13} /> Show Notes
             </button>
+            <button onClick={() => setView('path')} className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-[0.78rem] font-semibold transition-all ${view === 'path' ? 'bg-cream-50 text-terra-dark shadow-sm' : 'text-ink-400 hover:text-ink-900'}`}>
+              <Compass size={13} /> Learning Path
+            </button>
           </div>
         </div>
 
@@ -312,6 +368,11 @@ export default function SynthPlayer({ onBack }) {
                       )}
                     </div>
                     <span className={`text-xs tabular-nums shrink-0 ${isActive ? 'text-terra-dark' : 'text-ink-400'}`}>{formatTime(ch.start_ms)}</span>
+                    {isClip && (
+                      <button onClick={(e) => { e.stopPropagation(); goDeeper(idx); }} title="Love this? Build a deeper cast on it" className="text-ink-300 hover:text-terra shrink-0 transition-colors">
+                        <Compass size={13} />
+                      </button>
+                    )}
                     {isClip && ch.apple_podcasts_url && (
                       <a href={ch.apple_podcasts_url} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()} title="Open original episode" className="text-ink-300 hover:text-terra shrink-0 transition-colors">
                         <ExternalLink size={11} />
@@ -376,6 +437,84 @@ export default function SynthPlayer({ onBack }) {
                 );
               })}
             </div>
+          </div>
+        )}
+
+        {/* Learning Path */}
+        {view === 'path' && (
+          <div className="px-8 py-6">
+            <div className="flex items-center justify-between mb-1 flex-wrap gap-2">
+              <h3 className="text-[0.68rem] text-ink-400 uppercase tracking-[0.12em] font-semibold flex items-center gap-1.5">
+                <Compass size={12} /> Continue your learning path
+              </h3>
+              {followups.status === 'ready' && (
+                <button onClick={() => fetchFollowups(followups.focus)} className="text-[0.7rem] text-ink-400 hover:text-terra-dark transition-colors">
+                  Refresh
+                </button>
+              )}
+            </div>
+            <p className="text-ink-500 text-[0.85rem] leading-relaxed mb-4">
+              {followups.focus != null && chapters[followups.focus]
+                ? <>Building on <span className="text-terra-dark font-medium">“{chapters[followups.focus].title}”</span> — here’s where to go next.</>
+                : <>Loved this? Fork it into the next casts of a personal curriculum. Each one generates a brand-new documentary.</>}
+            </p>
+
+            {followups.status === 'loading' && (
+              <div className="flex flex-col gap-3">
+                {[0, 1, 2, 3].map(i => (
+                  <div key={i} className="h-[76px] rounded-2xl bg-cream-200 border border-ink-900/6 animate-pulse" />
+                ))}
+                <p className="text-center text-[0.72rem] text-ink-400 mt-1">Designing your next steps…</p>
+              </div>
+            )}
+
+            {followups.status === 'error' && (
+              <div className="text-center py-8">
+                <p className="text-ink-500 text-sm mb-3">Couldn’t load suggestions right now.</p>
+                <button onClick={() => fetchFollowups(followups.focus)} className="px-4 py-1.5 rounded-full bg-cream-200 border border-ink-900/10 text-ink-500 text-sm font-semibold hover:text-terra-dark hover:border-terra/30 transition-colors">
+                  Try again
+                </button>
+              </div>
+            )}
+
+            {followups.status === 'ready' && followups.items.length === 0 && (
+              <p className="text-ink-400 text-sm italic py-6 text-center">No follow-ups available for this cast.</p>
+            )}
+
+            {followups.status === 'ready' && followups.items.length > 0 && (
+              <div className="flex flex-col gap-3">
+                {followups.items.map((item, i) => {
+                  const meta = FOLLOWUP_KINDS[item.kind] || FOLLOWUP_KINDS.next;
+                  const KindIcon = meta.icon;
+                  return (
+                    <div key={i} className="group flex items-start gap-3.5 p-4 rounded-2xl bg-cream-50 border border-ink-900/8 hover:border-terra/30 hover:shadow-[0_4px_16px_rgba(30,24,20,0.08)] transition-all">
+                      <div className={`w-9 h-9 rounded-full shrink-0 flex items-center justify-center border ${meta.badge}`}>
+                        <KindIcon size={15} />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-0.5 flex-wrap">
+                          <span className={`text-[0.6rem] font-semibold uppercase tracking-[0.08em] px-1.5 py-0.5 rounded-full border ${meta.badge}`}>{meta.label}</span>
+                          <span className="text-[0.6rem] text-ink-400 uppercase tracking-wide">{item.depth}</span>
+                        </div>
+                        <div className="text-sm font-semibold text-ink-900 mb-0.5">{item.title}</div>
+                        {item.blurb && <p className="text-ink-500 text-[0.82rem] leading-relaxed">{item.blurb}</p>}
+                      </div>
+                      <button
+                        onClick={() => handleGenerateFollowup(item)}
+                        disabled={!onGenerate}
+                        title="Generate this cast"
+                        className="shrink-0 self-center flex items-center gap-1.5 px-3.5 py-2 rounded-full bg-terra text-white text-[0.78rem] font-semibold hover:bg-terra-light active:scale-95 transition-all shadow-[0_2px_8px_rgba(191,86,48,0.20)] disabled:opacity-50"
+                      >
+                        <Sparkles size={13} /> Make
+                      </button>
+                    </div>
+                  );
+                })}
+                <p className="text-center text-[0.7rem] text-ink-400 mt-1">
+                  Generating a follow-up keeps this one playing and adds the new cast to your library.
+                </p>
+              </div>
+            )}
           </div>
         )}
       </div>

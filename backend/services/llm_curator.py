@@ -406,6 +406,99 @@ Return ONLY valid JSON:
 # Stage 5 — Write transition narrations for each clip
 # ─────────────────────────────────────────────────────────────────────────────
 
+def suggest_followups(
+    topic: str,
+    title: str,
+    chapters: List[dict],
+    focus_index: Optional[int] = None,
+) -> List[dict]:
+    """
+    Turn a finished cast into the next steps of a personal learning path.
+
+    Given what the listener just heard (topic + chapter titles/summaries + which
+    chapter, if any, they want to dig into), propose follow-up casts they can
+    generate with one tap. Each suggestion is a ready-to-synthesize topic plus a
+    pedagogical "kind":
+      - deeper       : zoom into one idea they loved and go further
+      - broaden      : "more like this" — adjacent angles on the same theme
+      - next         : the next rung up a learning progression
+      - foundations  : the prerequisite that makes everything click
+    """
+    clip_lines = []
+    for i, ch in enumerate(chapters or []):
+        if ch.get("type") != "clip":
+            continue
+        marker = "  <-- focus" if focus_index is not None and i == focus_index else ""
+        title_txt = ch.get("title", "")
+        summary = (ch.get("summary") or "").strip()
+        src = ch.get("source_podcast") or ""
+        clip_lines.append(f"- \"{title_txt}\"{(' — ' + summary) if summary else ''}{(' ['+src+']') if src else ''}{marker}")
+    chapters_block = "\n".join(clip_lines) if clip_lines else "(no chapter detail available)"
+
+    focus_hint = ""
+    if focus_index is not None and 0 <= focus_index < len(chapters or []):
+        fc = chapters[focus_index]
+        focus_hint = (
+            f"\nThe listener specifically wants MORE on this part: "
+            f"\"{fc.get('title','')}\" — {(fc.get('summary') or fc.get('text') or '').strip()}\n"
+        )
+
+    prompt = f"""You are a master learning designer helping someone go from a single great listen to a real, self-directed learning path.
+
+They just finished an audio documentary:
+  Title: {title or topic}
+  Topic: {topic}
+
+It contained these segments:
+{chapters_block}
+{focus_hint}
+Propose 4 follow-up "casts" they can generate next, each a NATURAL next move in learning this material deeply. Use these kinds (one each, in this order):
+  1. "deeper"      — zoom into the single most compelling idea here (or the focus part, if marked) and go much further on the mechanism/evidence.
+  2. "broaden"     — "more like this": an adjacent angle or application on the same theme they'd love.
+  3. "next"        — the logical NEXT step up the learning ladder once this is understood.
+  4. "foundations" — the prerequisite concept that makes all of this click (great if they want it to really stick).
+
+For each, write:
+  - "title": a punchy 3-6 word episode title
+  - "topic": a clear, specific topic/prompt to feed the generator (a full phrase a person would type, grounded in the actual content above — not generic)
+  - "blurb": one sentence on what they'll get and why it's the right next step
+  - "depth": one of "quick", "standard", "deep" (use "deep" only for genuinely broad next steps)
+
+Return ONLY valid JSON:
+{{"suggestions": [{{"kind": "deeper", "title": "...", "topic": "...", "blurb": "...", "depth": "standard"}}]}}"""
+
+    try:
+        response = _client().chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": "You design learning paths. Output only valid JSON."},
+                {"role": "user", "content": prompt},
+            ],
+            response_format={"type": "json_object"},
+            temperature=0.6,
+        )
+        data = json.loads(response.choices[0].message.content)
+    except Exception as e:
+        print(f"  Follow-up suggestion failed: {e}")
+        return []
+
+    valid_kinds = {"deeper", "broaden", "next", "foundations"}
+    valid_depths = {"quick", "standard", "deep"}
+    out = []
+    for s in data.get("suggestions", []):
+        t = (s.get("topic") or "").strip()
+        if not t:
+            continue
+        out.append({
+            "kind": s.get("kind") if s.get("kind") in valid_kinds else "next",
+            "title": (s.get("title") or t)[:80],
+            "topic": t,
+            "blurb": (s.get("blurb") or "").strip(),
+            "depth": s.get("depth") if s.get("depth") in valid_depths else "standard",
+        })
+    return out[:4]
+
+
 def write_transitions_batch(topic: str, ordered_clips: List[dict]) -> List[dict]:
     """
     Write a narrator transition script BEFORE each clip.
