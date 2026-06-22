@@ -20,15 +20,24 @@ topic ──▶ curate sources (GPT) ──▶ find + download episodes (iTunes/
 ```
 
 ### Backend (`/backend`, FastAPI)
-- `services/llm_curator.py` — source discovery, clip extraction, curriculum
-  ordering, and narrator script writing (OpenAI).
-- `services/ingestion.py` — iTunes search, RSS episode selection, download,
-  trim, and Whisper transcription.
+- `services/llm_curator.py` — source discovery (over-provisioned with ranked
+  backups), clip extraction (LLM-chosen boundaries are **snapped to Whisper
+  segment edges** so clips never cut mid-sentence), curriculum ordering, and
+  narrator script writing (OpenAI).
+- `services/ingestion.py` — iTunes search, RSS episode selection (grounded in
+  episode **summaries**, not just titles), download, trim, and Whisper
+  transcription. The trim window is **depth-aware** (deep-dives transcribe ~70
+  min by auto-selecting a Whisper-safe bitrate), and sources are processed in
+  **backfill waves** so a dead feed is transparently replaced by a ranked
+  backup instead of yielding a thin result.
 - `services/transcript_cache.py` — GUID-keyed cache for trimmed audio +
   transcripts (skips the expensive download/Whisper steps on repeat episodes).
 - `services/audio_engine.py` — Edge-TTS narration + ffmpeg clip extraction +
-  stitching into the final MP3. Emits per-segment chapter metadata, including
-  narration text and clip summaries used by the **Show Notes** view.
+  stitching into the final MP3. Clips and narration are **loudness-normalized**
+  to a consistent −16 LUFS (EBU R128) so the mix never makes you ride the volume
+  knob, narration is synthesized **in parallel**, and joins are click-free.
+  Emits per-segment chapter metadata (narration text + clip summaries) for the
+  **Show Notes** view.
 - `main.py` — job queue, polling API (`/synthesize`, `/jobs/{id}`,
   `/audio/{id}`, `/download/{id}`), CORS, and bounded in-memory job state.
 
