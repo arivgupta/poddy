@@ -22,8 +22,12 @@ topic ──▶ curate sources (GPT) ──▶ find + download episodes (iTunes/
 ### Backend (`/backend`, FastAPI)
 - `services/llm_curator.py` — source discovery (over-provisioned with ranked
   backups), clip extraction (LLM-chosen boundaries are **snapped to Whisper
-  segment edges** so clips never cut mid-sentence), curriculum ordering, and
-  narrator script writing (OpenAI).
+  segment edges** so clips never cut mid-sentence), curriculum ordering with a
+  **source-diversity guarantee** (the final cut always reflects every show that
+  contributed clips, instead of collapsing to a single podcast), and narrator
+  script writing (OpenAI). OpenAI calls **retry through transient rate limits**
+  so a deep dive that briefly exceeds the org's tokens-per-minute cap recovers
+  instead of failing the whole job.
 - `services/ingestion.py` — iTunes search, RSS episode selection (grounded in
   episode **summaries**, not just titles), download, trim, and Whisper
   transcription. The trim window is **depth-aware** (deep-dives transcribe ~70
@@ -35,9 +39,11 @@ topic ──▶ curate sources (GPT) ──▶ find + download episodes (iTunes/
 - `services/audio_engine.py` — Edge-TTS narration + ffmpeg clip extraction +
   stitching into the final MP3. Clips and narration are **loudness-normalized**
   to a consistent −16 LUFS (EBU R128) so the mix never makes you ride the volume
-  knob, narration is synthesized **in parallel**, and joins are click-free.
-  Emits per-segment chapter metadata (narration text + clip summaries) for the
-  **Show Notes** view.
+  knob, and the assembled mix gets a final **two-pass loudnorm master** so the
+  whole piece lands on −16 LUFS / −1.5 dBTP precisely (validated on real runs at
+  ≈ −16.3 LUFS). Narration is synthesized **in parallel**, and joins are
+  click-free. Emits per-segment chapter metadata (narration text + clip
+  summaries) for the **Show Notes** view.
 - `main.py` — job queue, polling API (`/synthesize`, `/jobs/{id}`,
   `/audio/{id}`, `/download/{id}`), CORS, and bounded in-memory job state.
 
