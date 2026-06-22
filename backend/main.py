@@ -26,6 +26,7 @@ from services.llm_curator import (
     order_and_deduplicate,
     write_transitions_batch,
 )
+from services.discovery import discover_episode_candidates
 from services.audio_engine import stitch_multi_source
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -154,8 +155,14 @@ def run_pipeline(job_id: str, topic: str, depth: str):
                 jobs[job_id]["title"] = topic
 
         # ── Stage 1: AI source discovery (over-provisioned for backfill) ──────
+        # Prefer topic-grounded discovery (real episodes from iTunes episode
+        # search, LLM-ranked for credibility + diversity). Fall back to the
+        # legacy recall path only if the grounded search comes up empty.
         update("discovering_sources")
-        sources = curate_sources(topic, n_sources=n_sources)
+        sources = discover_episode_candidates(topic, n_sources=n_sources, n_extra=max(3, n_sources))
+        if not sources:
+            print(f"[{job_id}] grounded discovery empty — falling back to recall")
+            sources = curate_sources(topic, n_sources=n_sources, n_extra=max(3, n_sources))
 
         # ── Stage 2: Parallel download + transcription ─────────────────────────
         # Show only the primary picks to the user; extras are silent backups.

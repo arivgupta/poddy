@@ -116,6 +116,7 @@ def main():
         sys.exit(2)
 
     from services.ingestion import process_sources_parallel
+    from services.discovery import discover_episode_candidates
     from services.llm_curator import (
         generate_title, curate_sources, extract_clips_from_source,
         order_and_deduplicate, write_transitions_batch,
@@ -141,9 +142,15 @@ def main():
     title = stage("Stage 0 — title", lambda: generate_title(args.topic))
     print(f"  Title: {title}")
 
-    sources = stage("Stage 1 — source discovery",
-                    lambda: curate_sources(args.topic, n_sources=cfg["n_sources"]))
-    print(f"  Candidates: {[s.get('podcast_name') for s in sources]}")
+    def _discover():
+        grounded = discover_episode_candidates(
+            args.topic, n_sources=cfg["n_sources"], n_extra=max(3, cfg["n_sources"]))
+        if grounded:
+            return grounded
+        print("  Grounded discovery empty — falling back to recall")
+        return curate_sources(args.topic, n_sources=cfg["n_sources"], n_extra=max(3, cfg["n_sources"]))
+    sources = stage("Stage 1 — source discovery", _discover)
+    print(f"  Candidates: {[(s.get('podcast_name'), s.get('resolved_episode_title') or s.get('episode_title_hint')) for s in sources]}")
 
     enriched = stage("Stage 2 — download + transcribe",
                      lambda: process_sources_parallel(

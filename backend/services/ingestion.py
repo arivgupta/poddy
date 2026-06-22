@@ -278,17 +278,33 @@ def process_source(source: dict, job_dir: str, user_topic: str = "", window_minu
     episode_hint = source.get("episode_title_hint", "")
     topic_hint   = user_topic or source.get("unique_angle", podcast_name)
 
-    print(f"\n[{podcast_name}] Searching iTunes...")
     try:
-        podcasts = search_podcast(podcast_name, limit=3)
-        if not podcasts:
-            print(f"[{podcast_name}] Not found on iTunes — skipping.")
-            return None
-        podcast = podcasts[0]
+        if source.get("mp3_url"):
+            # Grounded candidate: the episode (and its MP3) is already resolved by
+            # topic-level iTunes episode search — skip show search + feed parsing.
+            podcast = {
+                "feed_url": "",
+                "apple_podcasts_url": source.get("apple_podcasts_url", ""),
+            }
+            episode = {
+                "title": source.get("resolved_episode_title") or episode_hint or podcast_name,
+                "mp3_url": source["mp3_url"],
+                "apple_podcasts_url": source.get("apple_podcasts_url", ""),
+                "guid": source.get("guid") or source["mp3_url"],
+                "description": source.get("description", ""),
+            }
+            print(f"\n[{podcast_name}] Grounded episode: {episode['title']}")
+        else:
+            print(f"\n[{podcast_name}] Searching iTunes...")
+            podcasts = search_podcast(podcast_name, limit=3)
+            if not podcasts:
+                print(f"[{podcast_name}] Not found on iTunes — skipping.")
+                return None
+            podcast = podcasts[0]
 
-        print(f"[{podcast_name}] Found feed. Selecting episode matching: '{episode_hint}'")
-        episode = get_best_episode(podcast["feed_url"], topic_hint=topic_hint, episode_title_hint=episode_hint)
-        print(f"[{podcast_name}] Episode: {episode['title']}")
+            print(f"[{podcast_name}] Found feed. Selecting episode matching: '{episode_hint}'")
+            episode = get_best_episode(podcast["feed_url"], topic_hint=topic_hint, episode_title_hint=episode_hint)
+            print(f"[{podcast_name}] Episode: {episode['title']}")
 
         # ── Cache lookup ──────────────────────────────────────────────────────
         # Keyed on RSS GUID (canonical) with mp3_url as fallback. A hit skips
