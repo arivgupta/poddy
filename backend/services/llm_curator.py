@@ -12,7 +12,11 @@ def _client() -> OpenAI:
     api_key = os.environ.get("OPENAI_API_KEY")
     if not api_key:
         raise ValueError("OPENAI_API_KEY is not set.")
-    return OpenAI(api_key=api_key)
+    # Deep dives fan out several gpt-4o calls over large transcripts and can
+    # momentarily exceed the org's tokens-per-minute limit (HTTP 429). The SDK
+    # honors Retry-After / x-ratelimit-reset headers, so give it enough retries
+    # to ride out a rolling-window TPM cap instead of failing the whole job.
+    return OpenAI(api_key=api_key, max_retries=6, timeout=120.0)
 
 
 def _parse_json(text: str) -> Any:

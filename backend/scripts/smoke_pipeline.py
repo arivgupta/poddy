@@ -157,9 +157,13 @@ def main():
     def _extract():
         all_clips = []
         for src in enriched:
-            clips = extract_clips_from_source(
-                topic=args.topic, transcript=src["transcript"],
-                source_info=src, n_clips=cfg["n_clips"])
+            try:
+                clips = extract_clips_from_source(
+                    topic=args.topic, transcript=src["transcript"],
+                    source_info=src, n_clips=cfg["n_clips"])
+            except Exception as e:
+                print(f"  clip extraction failed for {src.get('podcast_name')}: {e}")
+                continue
             for c in clips:
                 c["audio_path"] = src["audio_path"]
             all_clips.extend(clips)

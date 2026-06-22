@@ -172,15 +172,25 @@ def run_pipeline(job_id: str, topic: str, depth: str):
         update("extracting_clips")
         all_clips = []
         for src in enriched_sources:
-            clips = extract_clips_from_source(
-                topic=topic,
-                transcript=src["transcript"],
-                source_info=src,
-                n_clips=n_clips,  # generous fixed count per source
-            )
+            # A single source failing (e.g. a transient rate limit even after
+            # retries) must not sink the whole documentary — skip it and keep
+            # the clips we did get from the other sources.
+            try:
+                clips = extract_clips_from_source(
+                    topic=topic,
+                    transcript=src["transcript"],
+                    source_info=src,
+                    n_clips=n_clips,  # generous fixed count per source
+                )
+            except Exception as e:
+                print(f"[{job_id}] clip extraction failed for {src.get('podcast_name')}: {e}")
+                continue
             for clip in clips:
                 clip["audio_path"] = src["audio_path"]
             all_clips.extend(clips)
+
+        if not all_clips:
+            raise RuntimeError("Could not extract any usable clips from the sources.")
 
         # ── Stage 4: Cross-source curriculum ordering (keeps all non-dupes) ───
         update("building_curriculum")
