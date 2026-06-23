@@ -13,10 +13,14 @@ from .config import VideoProfile
 
 
 def _esc(text: str) -> str:
-    """Escape text for ffmpeg drawtext (colons, quotes, backslashes, %)."""
+    """Escape text for ffmpeg drawtext, which we always wrap in single quotes
+    (text='...'). The one character that can't live inside single quotes is the
+    single quote itself, so swap straight apostrophes for a typographic one
+    (renders identically, never breaks the filtergraph). Colons/percent/backslash
+    are escaped; commas are safe inside the quotes."""
     return (text.replace("\\", "\\\\")
+                .replace("'", "\u2019")
                 .replace(":", "\\:")
-                .replace("'", "\\'")
                 .replace("%", "\\%"))
 
 

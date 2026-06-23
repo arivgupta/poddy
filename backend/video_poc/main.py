@@ -61,6 +61,11 @@ def build_parser() -> argparse.ArgumentParser:
     ap.add_argument("--out-dir", default="/tmp/poddy_video_poc",
                     help="Where rendered media would be written (LIVE mode only).")
 
+    # ── Self-test: render a REAL lesson.mp4 fully offline (no network) ───────
+    ap.add_argument("--self-test", action="store_true",
+                    help="Render a real lesson.mp4 from SYNTHETIC offline footage (no network, "
+                         "no YouTube). Best way to see the assembly actually work. Implies --execute.")
+
     # ── Danger flags (all default OFF) ──────────────────────────────────────
     ap.add_argument("--execute", action="store_true",
                     help="Actually RUN the plan instead of dry-run. Implies media work.")
@@ -72,11 +77,21 @@ def build_parser() -> argparse.ArgumentParser:
                     help="Call OpenAI for selection + teacher script (needs OPENAI_API_KEY).")
     ap.add_argument("--no-cc-filter", action="store_true",
                     help="Disable the Creative-Commons license filter (NOT recommended).")
+    ap.add_argument("--cookies-from-browser", default=None,
+                    help="yt-dlp: read cookies from this browser (e.g. chrome, firefox) to get "
+                         "past YouTube's bot wall. Use on your own machine for the real path.")
+    ap.add_argument("--cookies", default=None,
+                    help="yt-dlp: path to a cookies.txt (alternative to --cookies-from-browser).")
     return ap
 
 
 def main(argv=None) -> int:
     args = build_parser().parse_args(argv)
+
+    # --self-test renders real media but is fully offline, so it implies --execute.
+    if args.self_test and not args.execute:
+        print("[config] --self-test implies --execute (offline render).")
+        args.execute = True
 
     dry_run = not args.execute
     if args.allow_download and not args.allow_network:
@@ -94,10 +109,13 @@ def main(argv=None) -> int:
         allow_download=args.allow_download,
         use_llm=args.use_llm,
         require_cc_license=not args.no_cc_filter,
+        self_test=args.self_test,
+        cookies_from_browser=args.cookies_from_browser,
+        cookies_file=args.cookies,
         profile=VideoProfile(),
     )
 
-    if not dry_run:
+    if not dry_run and not args.self_test:
         print("\n*** LIVE MODE ENABLED — this may download media and call paid APIs. ***")
         print("*** Ensure you have the right to use any source video (see README). ***\n")
 

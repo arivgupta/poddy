@@ -66,6 +66,39 @@ In dry-run, discovery returns a small **offline allow-list of genuinely reusable
 samples** (Blender open movies = CC-BY, NASA b-roll = public domain) so the whole
 pipeline is exercised without scraping.
 
+## Actually render a video — two ways
+
+### A. Offline self-test (no network, no keys) — recommended first run
+
+Produces a **real `lesson.mp4`** from synthetic offline footage so you can see the
+whole assembly (slate + TTS narration → clip with lower-third → checkpoints → recap)
+actually work. Only needs `ffmpeg` + `edge-tts` (TTS does need network for the voice).
+
+```bash
+python3 video_poc/main.py --topic "how rainbows form" --depth quick --self-test
+# → /tmp/poddy_video_poc/lesson.mp4  (1280x720, ~-16 LUFS, + CREDITS.txt)
+```
+
+The "footage" is a labelled test pattern and the audio is a placeholder tone, but the
+narration, on-screen text, cutting, normalization, concatenation, and loudness master
+are all the **real** pipeline. On the real path below, those synthetic sources are
+replaced by actual CC YouTube clips.
+
+### B. Real YouTube path (run on YOUR machine, read the legal caveats above)
+
+YouTube blocks datacenter IPs with a "confirm you're not a bot" wall, so this must be
+run from a normal/residential machine, and you pass your browser cookies:
+
+```bash
+python3 video_poc/main.py --topic "how rainbows form" --depth quick \
+    --execute --allow-network --allow-download --use-llm \
+    --cookies-from-browser chrome        # or: --cookies /path/to/cookies.txt
+```
+
+This searches CC-licensed YouTube videos, fetches captions, picks segments with
+gpt-4o, downloads just the chosen windows (`yt-dlp --download-sections`), and renders
+the lesson with attribution baked in.
+
 ## Flags
 
 | Flag | Default | Meaning |
@@ -76,11 +109,14 @@ pipeline is exercised without scraping.
 | `--avatar-image` | – | Portrait for talking-head modes |
 | `--kids` | off | Simpler script, younger voice, stricter filtering |
 | `--out-dir` | `/tmp/poddy_video_poc` | Where media would be written (LIVE only) |
+| `--self-test` | off | Render a real `lesson.mp4` from synthetic offline footage (implies `--execute`, no network/YouTube) |
 | **Danger flags (all OFF):** | | |
 | `--execute` | off | Actually run the plan instead of dry-run |
 | `--allow-network` | off | Permit outbound requests (search / captions) |
 | `--allow-download` | off | Permit downloading media bytes (implies network) |
 | `--use-llm` | off | Use OpenAI for selection + script (needs `OPENAI_API_KEY`) |
+| `--cookies-from-browser` | – | yt-dlp: read cookies from a browser (e.g. `chrome`) to pass YouTube's bot wall |
+| `--cookies` | – | yt-dlp: path to a `cookies.txt` (alternative to the above) |
 | `--no-cc-filter` | off | Disable the CC license filter (**not recommended**) |
 
 Safety is layered: `--execute` alone still won't hit the network; you must *also*
@@ -103,10 +139,12 @@ pass `--allow-network` / `--allow-download`. A plain dry run can never download.
 
 ## Status / what's real
 
-- ✅ Fully implemented & verified in dry-run: discovery planning, caption parsing,
-  segment selection + snapping, ordering, teacher script, command generation for the
-  whole assembly, slate (no-avatar) renderer command path.
-- 🔌 Gated but implemented: live yt-dlp metadata search and VTT caption fetch,
-  LLM selection/script, slate render execution.
+- ✅ **Renders a real `lesson.mp4` end-to-end** via `--self-test` (verified: 1280x720@30
+  h264/aac, integrated loudness ≈ −16 LUFS, with intro/recap/outro slates, TTS narration,
+  per-clip lower-thirds, checkpoints, concat + loudness master, and a `CREDITS.txt`).
+- ✅ Verified in dry-run: discovery planning, caption parsing, segment selection +
+  snapping, ordering, teacher script, full assembly command generation.
+- 🔌 Gated but implemented: live yt-dlp CC search + section download, VTT caption fetch,
+  LLM selection/script, slate render execution, cookie auth for the bot wall.
 - 🧱 Documented stubs (raise a clear error in LIVE mode): `sadtalker` and `did`
   talking-head renderers — they print their representative commands in dry-run.

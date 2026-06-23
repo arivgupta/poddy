@@ -56,6 +56,13 @@ class PipelineConfig:
     require_cc_license: bool = True      # only keep creativecommons-licensed videos
     kids_mode: bool = False             # stricter content filtering + simpler script
 
+    # ── Self-test: render a REAL lesson.mp4 fully offline using synthetic source
+    #    footage (no network, no YouTube) so the whole assembly can be validated.
+    self_test: bool = False
+    # yt-dlp cookies (real YouTube path) — needed to get past the bot wall.
+    cookies_from_browser: Optional[str] = None   # e.g. "chrome", "firefox"
+    cookies_file: Optional[str] = None            # path to a cookies.txt
+
     # ── Avatar ──────────────────────────────────────────────────────────────
     avatar: str = "none"                # none | sadtalker | did  (see avatar.py)
     avatar_image: Optional[str] = None  # portrait for talking-head modes
