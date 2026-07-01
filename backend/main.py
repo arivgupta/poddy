@@ -243,13 +243,13 @@ def get_job(job_id: str):
 @app.get("/audio/{job_id}")
 def get_audio(job_id: str):
     """Stream the final synthesized MP3 (for in-browser playback)."""
-    job = jobs.get(job_id)
-    if not job:
-        raise HTTPException(status_code=404, detail="Job not found")
-    if job.get("status") != "done":
-        raise HTTPException(status_code=425, detail=f"Job status: {job.get('status')}")
-
-    output_path = job.get("output_path")
+    with _jobs_lock:
+        job = jobs.get(job_id)
+        if not job:
+            raise HTTPException(status_code=404, detail="Job not found")
+        if job.get("status") != "done":
+            raise HTTPException(status_code=425, detail=f"Job status: {job.get('status')}")
+        output_path = job.get("output_path")
     if not output_path or not os.path.exists(output_path):
         raise HTTPException(status_code=500, detail="Audio file not found on server")
 
@@ -263,17 +263,18 @@ def get_audio(job_id: str):
 @app.get("/download/{job_id}")
 def download_audio(job_id: str):
     """Download the final MP3 as an attachment (triggers browser save dialog)."""
-    job = jobs.get(job_id)
-    if not job:
-        raise HTTPException(status_code=404, detail="Job not found")
-    if job.get("status") != "done":
-        raise HTTPException(status_code=425, detail=f"Not ready: {job.get('status')}")
+    with _jobs_lock:
+        job = jobs.get(job_id)
+        if not job:
+            raise HTTPException(status_code=404, detail="Job not found")
+        if job.get("status") != "done":
+            raise HTTPException(status_code=425, detail=f"Not ready: {job.get('status')}")
+        output_path = job.get("output_path")
+        safe_topic = job.get("topic", "poddy").replace("/", "-")[:50]
 
-    output_path = job.get("output_path")
     if not output_path or not os.path.exists(output_path):
         raise HTTPException(status_code=500, detail="Audio file missing on server")
 
-    safe_topic = job.get("topic", "poddy").replace("/", "-")[:50]
     filename   = f"Poddy - {safe_topic}.mp3"
 
     return FileResponse(
