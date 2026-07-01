@@ -1,274 +1,317 @@
-import React, { useState, useRef, useCallback, useEffect } from 'react';
-import PromptInterface from './components/PromptInterface';
-import CuratorLoadingState from './components/CuratorLoadingState';
-import SynthPlayer from './components/SynthPlayer';
-import Library from './components/Library';
-import { saveAudioBlob, loadAudioBlob, deleteAudioBlob } from './lib/audioStore';
+import React, { useCallback, useEffect, useState } from 'react';
+import Header from './components/Header';
+import Toasts from './components/Toasts';
+import MiniDock from './components/MiniDock';
+import Home from './views/Home';
+import Studio from './views/Studio';
+import Player from './views/Player';
+import Library from './views/Library';
+import { useToasts } from './hooks/useToasts';
+import { useLibrary } from './hooks/useLibrary';
+import { usePlayer } from './hooks/usePlayer';
+import { useGeneration } from './hooks/useGeneration';
+import { loadAudioBlob } from './lib/audioStore';
+import { audioExistsOnServer, streamUrl } from './lib/api';
+import { STAGES, stageIndex } from './lib/stages';
+import { formatClock } from './lib/format';
 
-const BACKEND = import.meta.env.VITE_BACKEND_URL || 'http://127.0.0.1:8000';
-const LIBRARY_KEY = 'poddy_library';
+export default function App() {
+  const [view, setView] = useState('home');
+  const [prefillTopic, setPrefillTopic] = useState('');
+  const [focusSignal, setFocusSignal] = useState(0);
 
-function loadLibrary() {
-  try { return JSON.parse(localStorage.getItem(LIBRARY_KEY) || '[]'); }
-  catch { return []; }
-}
-function saveLibraryToStorage(entries) {
-  try { localStorage.setItem(LIBRARY_KEY, JSON.stringify(entries)); }
-  catch {}
-}
+  const { toasts, push, dismiss } = useToasts();
+  const library = useLibrary();
+  const player = usePlayer();
 
-function App() {
-  const [appState, setAppState]         = useState('prompt');
-  const [topic, setTopic]               = useState('');
-  const [title, setTitle]               = useState('');
-  const [jobId, setJobId]               = useState(null);
-  const [loadingStatus, setLoadingStatus] = useState('');
-  const [sourceNames, setSourceNames]   = useState([]);
-  const [chapters, setChapters]         = useState([]);
-  const [audioUrl, setAudioUrl]         = useState(null);
-  const [sourcesUsed, setSourcesUsed]   = useState([]);
-  const [durationMs, setDurationMs]     = useState(0);
-  const [depth, setDepth]               = useState('standard');
-  const [library, setLibrary]           = useState(loadLibrary);
-  const [errorInfo, setErrorInfo]       = useState(null);
+  // ── Generation lifecycle ──────────────────────────────────────────────
+  // useGeneration re-reads these callbacks on every render, so closing over
+  // `view` and `player` directly always sees current values.
+  const generationApi = useGeneration({
+    onComplete: (entry, blobUrl) => {
+      library.upsert(entry);
+      const inStudio = view === 'studio';
+      const somethingElsePlaying = player.episode && player.isPlaying;
 
-  const pollRef = useRef(null);
-  const cancelledRef = useRef(false);
+      if (inStudio && !somethingElsePlaying) {
+        player.load(entry, blobUrl, { autoplay: false });
+        setView('player');
+        push({ kind: 'success', message: 'Your episode is ready. Press play.' });
+      } else {
+        push({
+          kind: 'success',
+          message: `"${entry.title}" is ready.`,
+          duration: 12000,
+          action: {
+            label: 'Listen now',
+            onClick: () => {
+              player.load(entry, blobUrl, { autoplay: true });
+              setView('player');
+            },
+          },
+        });
+      }
+    },
+    onFailed: (gen, message) => {
+      if (view !== 'studio') {
+        push({
+          kind: 'error',
+          message: `Production failed: ${message}`,
+          duration: 10000,
+          action: { label: 'See details', onClick: () => setView('studio') },
+        });
+      }
+    },
+    onResume: () => {
+      setView('studio');
+      push({ kind: 'info', message: 'Welcome back — your episode is still in production.' });
+    },
+  });
+  const { generation, isActive, start, cancel, dismissError } = generationApi;
 
-  useEffect(() => {
-    return () => { if (pollRef.current) clearInterval(pollRef.current); };
-  }, []);
-
-  const addToLibrary = useCallback((entry) => {
-    setLibrary(prev => {
-      const updated = [...prev.filter(e => e.jobId !== entry.jobId), entry];
-      saveLibraryToStorage(updated);
-      return updated;
-    });
-  }, []);
-
-  const deleteFromLibrary = useCallback(async (id) => {
-    setLibrary(prev => {
-      const updated = prev.filter(e => e.jobId !== id);
-      saveLibraryToStorage(updated);
-      return updated;
-    });
-    try { await deleteAudioBlob(id); } catch {}
-  }, []);
-
-  const stopPolling = useCallback(() => {
-    if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
-  }, []);
-
-  const pollJob = useCallback((id) => {
-    cancelledRef.current = false;
-    pollRef.current = setInterval(async () => {
-      if (cancelledRef.current) { stopPolling(); return; }
+  // ── Actions ───────────────────────────────────────────────────────────
+  const handleSubmit = useCallback(
+    async (topic, depth) => {
+      setPrefillTopic('');
+      setView('studio');
       try {
-        const res  = await fetch(`${BACKEND}/jobs/${id}`);
-        const data = await res.json();
-
-        if (cancelledRef.current) { stopPolling(); return; }
-
-        setLoadingStatus(data.status);
-        if (data.source_names) setSourceNames(data.source_names);
-        if (data.title) setTitle(data.title);
-
-        if (data.status === 'done') {
-          stopPolling();
-          const chaps = data.chapters || [];
-          const used  = data.sources_used || [];
-          const dur   = data.duration_ms || 0;
-          const genTitle = data.title || topic;
-
-          let blobUrl = null;
-          try {
-            const audioRes = await fetch(`${BACKEND}/audio/${id}`);
-            if (!audioRes.ok) throw new Error('Audio fetch failed');
-            const blob = await audioRes.blob();
-            await saveAudioBlob(id, blob);
-            blobUrl = URL.createObjectURL(blob);
-          } catch (e) {
-            console.error('Failed to cache audio locally:', e);
-            blobUrl = `${BACKEND}/audio/${id}`;
-          }
-
-          setTitle(genTitle);
-          setChapters(chaps);
-          setSourcesUsed(used);
-          setDurationMs(dur);
-          setAudioUrl(blobUrl);
-          setAppState('player');
-          addToLibrary({ jobId: id, topic: data.topic || topic, title: genTitle, chapters: chaps, sourcesUsed: used, durationMs: dur, savedAt: Date.now() });
-
-        } else if (data.status === 'error') {
-          stopPolling();
-          setErrorInfo({
-            title: 'Generation failed',
-            detail: data.error || 'An unexpected error occurred while creating your podcast.',
-            canRetry: true,
-          });
-          setAppState('prompt');
-        }
-      } catch (e) { console.error('Poll error:', e); }
-    }, 2000);
-  }, [topic, addToLibrary, stopPolling]);
-
-  const handleSynthesize = async (query, selectedDepth) => {
-    setTopic(query);
-    setTitle('');
-    setDepth(selectedDepth);
-    setAppState('loading');
-    setLoadingStatus('queued');
-    setSourceNames([]);
-    setErrorInfo(null);
-    cancelledRef.current = false;
-    try {
-      const res = await fetch(`${BACKEND}/synthesize`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ topic: query, depth: selectedDepth }),
-      });
-      if (!res.ok) throw new Error(await res.text());
-      const { job_id } = await res.json();
-      setJobId(job_id);
-      pollJob(job_id);
-    } catch (e) {
-      console.error(e);
-      setErrorInfo({
-        title: 'Connection failed',
-        detail: 'Could not reach the Poddy server. Please check your connection and try again.',
-        canRetry: true,
-      });
-      setAppState('prompt');
-    }
-  };
-
-  const handleCancel = useCallback(() => {
-    cancelledRef.current = true;
-    stopPolling();
-    setAppState('prompt');
-    setLoadingStatus('');
-    setSourceNames([]);
-  }, [stopPolling]);
-
-  const handlePlayLibraryEntry = useCallback(async (entry) => {
-    stopPolling();
-    setTopic(entry.topic);
-    setTitle(entry.title || entry.topic);
-    setJobId(entry.jobId);
-    setChapters(entry.chapters || []);
-    setSourcesUsed(entry.sourcesUsed || []);
-    setDurationMs(entry.durationMs || 0);
-    setErrorInfo(null);
-
-    try {
-      const blob = await loadAudioBlob(entry.jobId);
-      if (blob) {
-        setAudioUrl(URL.createObjectURL(blob));
-        setAppState('player');
-        return;
+        await start(topic, depth);
+      } catch (err) {
+        setView('home');
+        push({ kind: 'error', message: err.message, duration: 8000 });
       }
-    } catch {}
+    },
+    [start, push],
+  );
 
-    const serverUrl = `${BACKEND}/audio/${entry.jobId}`;
-    try {
-      const res = await fetch(serverUrl, { method: 'HEAD' });
-      if (res.ok) {
-        setAudioUrl(serverUrl);
-        setAppState('player');
-        return;
-      }
-    } catch {}
-
-    setErrorInfo({
-      title: 'Audio unavailable',
-      detail: 'This podcast\'s audio is no longer available. The server may have restarted since it was created. You can generate it again with the same topic.',
-      canRetry: false,
+  const handleBlockedSubmit = useCallback(() => {
+    push({
+      kind: 'info',
+      message: 'One episode at a time — yours is still in the studio.',
+      action: { label: 'View progress', onClick: () => setView('studio') },
     });
-    setAppState('prompt');
-  }, [stopPolling]);
+  }, [push]);
 
-  const handleReset = useCallback(() => {
-    stopPolling();
-    if (audioUrl && audioUrl.startsWith('blob:')) URL.revokeObjectURL(audioUrl);
-    setAppState('prompt');
-    setTopic(''); setTitle(''); setJobId(null); setChapters([]); setSourcesUsed([]); setAudioUrl(null); setDurationMs(0);
-    setErrorInfo(null);
-  }, [stopPolling, audioUrl]);
+  const handlePlayEntry = useCallback(
+    async (entry) => {
+      // Prefer the locally cached copy; fall back to streaming.
+      let src = null;
+      try {
+        const blob = await loadAudioBlob(entry.jobId);
+        if (blob) src = URL.createObjectURL(blob);
+      } catch {
+        /* cache unavailable */
+      }
+      if (!src && (await audioExistsOnServer(entry.jobId))) {
+        src = streamUrl(entry.jobId);
+      }
+      if (!src) {
+        push({
+          kind: 'error',
+          message:
+            'This episode\'s audio is gone — the studio has moved on. Craft it again with the same prompt.',
+          duration: 9000,
+          action: {
+            label: 'Re-craft it',
+            onClick: () => {
+              setPrefillTopic(entry.topic);
+              setView('home');
+              setFocusSignal((n) => n + 1);
+            },
+          },
+        });
+        return;
+      }
 
-  const handleDismissError = useCallback(() => setErrorInfo(null), []);
+      const resumedMs = player.load(entry, src, { autoplay: true });
+      setView('player');
+      if (resumedMs > 0) {
+        push({ kind: 'info', message: `Picked up where you left off — ${formatClock(resumedMs)}.` });
+      }
+    },
+    [player, push],
+  );
+
+  const handleNavigate = useCallback(
+    (target, opts = {}) => {
+      if (generation?.status === 'error' && target !== 'studio') dismissError();
+      setView(target);
+      if (opts.focusComposer) {
+        setPrefillTopic('');
+        setFocusSignal((n) => n + 1);
+        requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: 'smooth' }));
+      }
+    },
+    [generation, dismissError],
+  );
+
+  const handleCancelGeneration = useCallback(() => {
+    cancel();
+    setView('home');
+    push({ kind: 'info', message: 'Production cancelled.' });
+  }, [cancel, push]);
+
+  const handleRetry = useCallback(() => {
+    if (!generation) return;
+    const { topic, depth } = generation;
+    dismissError();
+    handleSubmit(topic, depth);
+  }, [generation, dismissError, handleSubmit]);
+
+  const handleEditPrompt = useCallback(() => {
+    if (generation) setPrefillTopic(generation.topic);
+    dismissError();
+    setView('home');
+    setFocusSignal((n) => n + 1);
+  }, [generation, dismissError]);
+
+  const handleCloseDock = useCallback(() => {
+    player.stop();
+  }, [player]);
+
+  // ── Global keyboard shortcuts (only while an episode is loaded) ───────
+  const hasEpisode = Boolean(player.episode);
+  const { toggle: playerToggle, skip: playerSkip } = player;
+  useEffect(() => {
+    if (!hasEpisode) return;
+    const onKey = (e) => {
+      const t = e.target;
+      if (
+        t instanceof HTMLElement &&
+        (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)
+      ) {
+        return;
+      }
+      if (e.code === 'Space') {
+        e.preventDefault();
+        playerToggle();
+      } else if (e.key === 'ArrowLeft') {
+        playerSkip(-15);
+      } else if (e.key === 'ArrowRight') {
+        playerSkip(15);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [hasEpisode, playerToggle, playerSkip]);
+
+  // ── Document title ────────────────────────────────────────────────────
+  useEffect(() => {
+    if (player.isPlaying && player.episode) {
+      document.title = `▶ ${player.episode.title || player.episode.topic} — Poddy`;
+    } else if (isActive) {
+      document.title = 'In the studio… — Poddy';
+    } else {
+      document.title = 'Poddy — Any question. One perfect episode.';
+    }
+  }, [player.isPlaying, player.episode, isActive]);
+
+  const generationLabel = (() => {
+    if (!generation) return '';
+    const idx = stageIndex(generation.status);
+    return idx >= 0 ? STAGES[idx].label : 'Producing…';
+  })();
+
+  const showStudio = view === 'studio' && generation;
+  const showPlayer = view === 'player' && player.episode;
+  const showDock = player.episode && view !== 'player';
 
   return (
-    <div className="min-h-screen px-6 pb-12 flex flex-col items-center relative z-1">
+    <div className="relative flex min-h-screen flex-col">
+      <Header
+        view={view}
+        onNavigate={handleNavigate}
+        isGenerating={isActive}
+        generationLabel={generationLabel}
+        libraryCount={library.entries.length}
+      />
 
-      {/* Header */}
-      <header className="w-full max-w-[860px] flex justify-between items-center py-5 mb-6 border-b border-ink-900/6">
-        <div onClick={handleReset} className="flex items-center gap-2.5 cursor-pointer group">
-          <div className="w-[34px] h-[34px] rounded-full bg-terra flex items-center justify-center shadow-[0_2px_8px_rgba(191,86,48,0.25)]">
-            <span className="text-cream-50 font-semibold text-[0.95rem] font-display">P</span>
-          </div>
-          <span className="font-display font-semibold text-[1.4rem] text-ink-900 group-hover:text-terra transition-colors">Poddy</span>
-        </div>
+      <main className="flex-1">
+        {view === 'home' && (
+          <Home
+            onSubmit={handleSubmit}
+            composerDisabled={isActive}
+            onBlockedSubmit={handleBlockedSubmit}
+            prefillTopic={prefillTopic}
+            focusSignal={focusSignal}
+            recentEntries={library.entries}
+            playingJobId={player.episode?.jobId || null}
+            onPlayEntry={handlePlayEntry}
+            onOpenLibrary={() => setView('library')}
+          />
+        )}
 
-        <nav className="flex gap-1.5">
-          <button
-            onClick={() => { stopPolling(); setAppState('library'); }}
-            className={`px-4 py-2 rounded-full text-sm font-medium transition-all ${
-              appState === 'library'
-                ? 'bg-cream-200 text-ink-900 border border-ink-900/10'
-                : 'text-ink-500 hover:text-ink-900 border border-transparent'
-            }`}
-          >
-            Library
-          </button>
-          <button
-            onClick={() => { stopPolling(); setAppState('prompt'); }}
-            className="px-4 py-2 rounded-full text-sm font-semibold bg-terra text-white hover:bg-terra-light transition-colors shadow-[0_2px_8px_rgba(191,86,48,0.20)]"
-          >
-            New Cast
-          </button>
-        </nav>
-      </header>
-
-      {/* Error banner */}
-      {errorInfo && appState === 'prompt' && (
-        <div className="animate-entrance w-full max-w-[640px] mb-6 p-5 rounded-2xl bg-error/7 border border-error/18">
-          <div className="flex justify-between items-start mb-2">
-            <h3 className="text-error text-[0.95rem] font-semibold">{errorInfo.title}</h3>
-            <button onClick={handleDismissError} className="text-ink-400 hover:text-ink-900 text-xl leading-none transition-colors">&times;</button>
-          </div>
-          <p className="text-ink-500 text-sm leading-relaxed">{errorInfo.detail}</p>
-          {errorInfo.canRetry && (
+        {showStudio && (
+          <Studio
+            generation={generation}
+            onCancel={handleCancelGeneration}
+            onRetry={handleRetry}
+            onEditPrompt={handleEditPrompt}
+            onBrowseLibrary={() => setView('library')}
+            hasLibrary={library.entries.length > 0}
+          />
+        )}
+        {view === 'studio' && !generation && (
+          <div className="animate-entrance mx-auto max-w-[420px] px-5 pt-24 pb-24 text-center">
+            <p className="mb-6 text-[0.95rem] text-cream-400">The studio is quiet — nothing in production.</p>
             <button
-              onClick={handleDismissError}
-              className="mt-3 px-4 py-1.5 rounded-full bg-error/7 border border-error/18 text-error font-semibold text-sm hover:bg-error/12 transition-colors"
+              onClick={() => handleNavigate('home', { focusComposer: true })}
+              className="rounded-2xl bg-gradient-to-r from-ember-500 to-ember-400 px-6 py-3 text-[0.92rem] font-semibold text-night-950 shadow-[0_8px_28px_rgba(233,104,58,0.35)]"
             >
-              Try again
+              Start a new episode
             </button>
-          )}
-        </div>
-      )}
+          </div>
+        )}
 
-      {/* Main content */}
-      <main className="w-full max-w-[860px] flex-1 flex flex-col items-center">
-        {appState === 'prompt'  && <PromptInterface onSynthesize={handleSynthesize} />}
-        {appState === 'loading' && (
-          <CuratorLoadingState topic={topic} title={title} status={loadingStatus} sourceNames={sourceNames} onCancel={handleCancel} depth={depth} />
+        {showPlayer && (
+          <Player
+            player={player}
+            episode={player.episode}
+            onBack={() => setView(isActive ? 'studio' : 'home')}
+          />
         )}
-        {appState === 'player'  && (
-          <SynthPlayer topic={topic} title={title} jobId={jobId} audioUrl={audioUrl} chapters={chapters} sourcesUsed={sourcesUsed} durationMs={durationMs} onBack={handleReset} />
+        {view === 'player' && !player.episode && (
+          <div className="animate-entrance mx-auto max-w-[420px] px-5 pt-24 pb-24 text-center">
+            <p className="mb-6 text-[0.95rem] text-cream-400">Nothing loaded. Pick an episode from your library.</p>
+            <button
+              onClick={() => setView('library')}
+              className="rounded-2xl border border-cream-50/15 px-6 py-3 text-[0.92rem] font-medium text-cream-200 hover:border-cream-50/30"
+            >
+              Open library
+            </button>
+          </div>
         )}
-        {appState === 'library' && (
-          <Library entries={library} onPlay={handlePlayLibraryEntry} onDelete={deleteFromLibrary} onNewCast={() => setAppState('prompt')} />
+
+        {view === 'library' && (
+          <Library
+            entries={library.entries}
+            playingJobId={player.episode?.jobId || null}
+            isPlaying={player.isPlaying}
+            onPlay={handlePlayEntry}
+            onDelete={library.remove}
+            onNewEpisode={() => handleNavigate('home', { focusComposer: true })}
+          />
         )}
       </main>
 
-      <footer className="mt-16 text-ink-400 text-xs tracking-wide font-body">
-        Poddy — assembling knowledge from the world's best conversations
-      </footer>
+      {view === 'home' && (
+        <footer className="border-t border-cream-50/6 py-8 text-center">
+          <p className="font-mono text-[0.65rem] tracking-[0.2em] text-cream-600 uppercase">
+            Poddy — assembled from the world's best conversations
+          </p>
+        </footer>
+      )}
+
+      {showDock && (
+        <MiniDock
+          player={player}
+          episode={player.episode}
+          onOpen={() => setView('player')}
+          onClose={handleCloseDock}
+        />
+      )}
+
+      <Toasts toasts={toasts} onDismiss={dismiss} />
     </div>
   );
 }
-
-export default App;
