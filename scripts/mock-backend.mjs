@@ -43,12 +43,14 @@ const DEPTH_SOURCES = { quick: 2, standard: 3, deep: 5 };
 const jobs = new Map();
 
 function titleFor(topic) {
-  const words = topic
-    .replace(/[?.!]/g, '')
-    .split(/\s+/)
-    .filter((w) => !/^(the|a|an|of|to|me|about|how|why|what|can|you|teach|i|want|understand|explain)$/i.test(w));
-  const core = words.slice(0, 4).map((w) => w[0].toUpperCase() + w.slice(1));
-  return core.length ? `The Art of ${core.join(' ')}` : 'Your Poddy Episode';
+  const cleaned = topic.replace(/[?.!]+$/g, '').trim();
+  if (!cleaned) return 'Your Poddy Episode';
+  const words = cleaned.split(/\s+/).slice(0, 8);
+  const minor = new Set(['a', 'an', 'and', 'as', 'at', 'but', 'by', 'for', 'in', 'of', 'on', 'or', 'the', 'to', 'vs']);
+  const titled = words.map((w, i) =>
+    i > 0 && minor.has(w.toLowerCase()) ? w.toLowerCase() : w[0].toUpperCase() + w.slice(1),
+  );
+  return `${titled.join(' ')}${words.length < cleaned.split(/\s+/).length ? '…' : ', Explained'}`;
 }
 
 /**

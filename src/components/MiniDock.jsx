@@ -33,7 +33,7 @@ export default function MiniDock({ player, episode, onOpen, onClose }) {
             <span className="block truncate text-[0.85rem] font-medium text-cream-50">
               {episode.title || episode.topic}
             </span>
-            <span className="block font-mono text-[0.62rem] text-cream-500">
+            <span className="block text-[0.7rem] text-cream-500 tabular-nums">
               {formatClock(currentMs)} / {formatClock(durationMs)}
             </span>
           </span>

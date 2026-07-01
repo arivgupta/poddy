@@ -211,7 +211,7 @@ export default function Player({ player, episode, onBack }) {
 
         <div className="min-w-0 flex-1">
           <p className="mb-2.5 font-mono text-[0.65rem] tracking-[0.26em] text-ember-400 uppercase">
-            {isPlaying ? 'Now playing' : 'Ready to play'}
+            {isPlaying ? 'Now playing' : currentMs > 1000 ? 'Paused' : 'Ready to play'}
           </p>
           <h1 className="mb-1.5 font-display text-[clamp(1.6rem,4vw,2.3rem)] leading-[1.12] font-semibold text-cream-50">
             {episode.title || episode.topic}

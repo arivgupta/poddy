@@ -87,7 +87,7 @@ export default function Composer({
       <div className="mx-5 h-px bg-cream-50/6" />
 
       {/* Depth selector */}
-      <div className="grid grid-cols-3 gap-2 px-4 pt-4 pb-2" role="radiogroup" aria-label="Episode depth">
+      <div className="grid grid-cols-1 gap-2 px-4 pt-4 pb-2 min-[440px]:grid-cols-3" role="radiogroup" aria-label="Episode depth">
         {DEPTHS.map((d) => {
           const active = d.value === depth;
           return (

@@ -176,18 +176,19 @@ export default function App() {
     if (!hasEpisode) return;
     const onKey = (e) => {
       const t = e.target;
-      if (
-        t instanceof HTMLElement &&
-        (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)
-      ) {
-        return;
-      }
+      if (!(t instanceof HTMLElement)) return;
+      const tag = t.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || t.isContentEditable) return;
+      const isSlider = t.getAttribute('role') === 'slider';
+
       if (e.code === 'Space') {
+        // Focused buttons/links keep their native space behavior.
+        if (tag === 'BUTTON' || tag === 'A' || isSlider) return;
         e.preventDefault();
         playerToggle();
-      } else if (e.key === 'ArrowLeft') {
+      } else if (e.key === 'ArrowLeft' && !isSlider) {
         playerSkip(-15);
-      } else if (e.key === 'ArrowRight') {
+      } else if (e.key === 'ArrowRight' && !isSlider) {
         playerSkip(15);
       }
     };
@@ -226,7 +227,7 @@ export default function App() {
         libraryCount={library.entries.length}
       />
 
-      <main className="flex-1">
+      <main className={`flex-1 ${showDock ? 'pb-24' : ''}`}>
         {view === 'home' && (
           <Home
             onSubmit={handleSubmit}
@@ -295,7 +296,7 @@ export default function App() {
       </main>
 
       {view === 'home' && (
-        <footer className="border-t border-cream-50/6 py-8 text-center">
+        <footer className={`border-t border-cream-50/6 pt-8 text-center ${showDock ? 'pb-28' : 'pb-8'}`}>
           <p className="font-mono text-[0.65rem] tracking-[0.2em] text-cream-600 uppercase">
             Poddy — assembled from the world's best conversations
           </p>
